@@ -4,28 +4,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Private Card Game</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; background: #181818; color: #fff; margin: 0; padding: 10px; overflow-x: hidden; }
+    body { font-family: Arial, sans-serif; text-align: center; background: #121212; color: #fff; margin: 0; padding: 10px; overflow-x: hidden; }
     input, button { padding: 12px; margin: 6px; font-size: 16px; border-radius: 8px; border: none; }
     button { background-color: #28a745; color: white; font-weight: bold; cursor: pointer; }
     .hidden { display: none; }
 
-    /* CARD STYLING */
+    /* TURN INFORMATION & TIMER */
+    .turn-bar { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+    .timer-container { width: 80%; background: #333; height: 10px; border-radius: 5px; margin: 5px auto 15px auto; overflow: hidden; }
+    .timer-fill { width: 100%; height: 100%; background: #e74c3c; transition: width 1s linear; }
+
+    /* CARD DESIGN */
     .card {
-      width: 80px;
-      height: 120px;
+      width: 75px;
+      height: 110px;
       border-radius: 10px;
       border: 3px solid #fff;
       position: relative;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.6);
       cursor: pointer;
       display: inline-block;
       user-select: none;
       box-sizing: border-box;
+      transition: transform 0.3s ease, top 0.3s ease, left 0.3s ease;
     }
-    .card .corner { position: absolute; top: 5px; left: 6px; font-size: 14px; font-weight: bold; }
+    .card .corner { position: absolute; top: 4px; left: 5px; font-size: 12px; font-weight: bold; }
     .card .center-oval {
-      width: 55px;
-      height: 80px;
+      width: 50px;
+      height: 72px;
       background: white;
       border-radius: 50%;
       position: absolute;
@@ -36,7 +42,7 @@
       align-items: center;
       justify-content: center;
     }
-    .card .center-number { font-size: 32px; font-weight: 900; }
+    .card .center-number { font-size: 22px; font-weight: 900; }
 
     /* CARD COLORS */
     .Red { background-color: #e74c3c; color: white; }
@@ -51,40 +57,62 @@
     .Yellow { background-color: #f1c40f; color: black; }
     .Yellow .center-number { color: #f1c40f; }
 
-    /* OVERLAPPING HAND */
+    .Wild { background: linear-gradient(135deg, #e74c3c, #2980b9, #27ae60, #f1c40f); color: white; }
+    .Wild .center-number { color: #111; }
+
+    /* UNCENTERED MESSY DISCARD PILE */
+    .pile-area {
+      position: relative;
+      width: 120px;
+      height: 130px;
+      margin: 10px auto;
+    }
+    .pile-area .card {
+      position: absolute;
+      top: 0;
+      left: 20px;
+    }
+
+    /* OVERLAPPING HAND WITH ANIMATION */
     .hand-container {
       display: flex;
       justify-content: center;
-      margin-top: 20px;
-      padding-left: 40px;
+      margin-top: 15px;
+      padding-left: 35px;
       overflow-x: auto;
       padding-bottom: 20px;
     }
     .hand-container .card {
-      margin-left: -45px; /* Creates card overlap */
-      transition: transform 0.2s;
+      margin-left: -40px;
     }
-    .hand-container .card:hover, .hand-container .card:active {
-      transform: translateY(-20px);
-      z-index: 100 !important;
+    .hand-container .card:active {
+      transform: translateY(-25px) scale(1.05) !important;
+      z-index: 200 !important;
     }
 
-    /* LEADERBOARD & GAME LAYOUT */
-    .leaderboard { background: #282828; padding: 10px; border-radius: 8px; margin: 10px auto; max-width: 300px; text-align: left; }
-    .leaderboard ol { margin: 5px 0; padding-left: 20px; }
+    /* ANIMATION FLY TO PILE */
+    .fly-card {
+      position: fixed !important;
+      z-index: 1000 !important;
+      transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1) !important;
+      pointer-events: none;
+    }
+
+    .leaderboard { background: #222; padding: 10px; border-radius: 8px; margin: 10px auto; max-width: 280px; text-align: left; }
+    .color-picker { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 300; }
+    .color-box { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 200px; height: 200px; }
+    .color-box button { width: 100%; height: 100%; margin: 0; border-radius: 12px; font-size: 18px; }
   </style>
 </head>
 <body>
 
-  <!-- JOIN SCREEN -->
   <div id="loginScreen">
-    <h1>Enter Game Passcode</h1>
+    <h1>Private Card Game</h1>
     <input type="text" id="username" placeholder="Your Name" /><br>
     <input type="text" id="roomCode" placeholder="Room Code (e.g. 1234)" /><br>
     <button onclick="join()">Join Lobby</button>
   </div>
 
-  <!-- LOBBY SCREEN -->
   <div id="lobbyScreen" class="hidden">
     <h2 id="roomTitle"></h2>
     <h3>Players in Lobby (Max 12):</h3>
@@ -92,62 +120,117 @@
     <button onclick="startGame()" style="background-color: #007bff;">Start Game</button>
   </div>
 
-  <!-- GAME SCREEN -->
   <div id="gameScreen" class="hidden">
-    <h2 id="turnDisplay">Waiting...</h2>
-    
-    <div id="leaderboardBox" class="leaderboard hidden">
-      <strong>🏆 Finishers Leaderboard:</strong>
-      <ol id="leaderboardList"></ol>
+    <div class="turn-bar">
+      Current: <span id="currentTurn" style="color:#2ecc71;">--</span><br>
+      <small style="color:#aaa;">Next up: <span id="nextTurn">--</span></small>
     </div>
 
-    <div>
-      <p>Discard Pile:</p>
-      <div id="topCard"></div>
+    <div class="timer-container">
+      <div id="timerFill" class="timer-fill"></div>
     </div>
-    
-    <br>
-    <button onclick="drawCard()" style="background-color: #e67e22;">Draw Card</button>
+
+    <div id="leaderboardBox" class="leaderboard hidden">
+      <strong>🏆 Finishers:</strong>
+      <ol id="leaderboardList" style="margin: 5px 0; padding-left: 20px;"></ol>
+    </div>
+
+    <p style="margin: 5px 0;">Discard Pile:</p>
+    <div id="pileArea" class="pile-area"></div>
+
+    <button onclick="drawCard()" style="background-color: #e67e22; margin-top: 15px;">Draw Card</button>
 
     <h3>Your Hand:</h3>
     <div id="hand" class="hand-container"></div>
   </div>
 
+  <div id="colorModal" class="color-picker hidden">
+    <div class="color-box">
+      <button class="Red" onclick="selectWildColor('Red')">Red</button>
+      <button class="Blue" onclick="selectWildColor('Blue')">Blue</button>
+      <button class="Green" onclick="selectWildColor('Green')">Green</button>
+      <button class="Yellow" onclick="selectWildColor('Yellow')">Yellow</button>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
+    let pendingWildCardId = null;
 
     function join() {
       const username = document.getElementById('username').value;
       const roomCode = document.getElementById('roomCode').value;
-
       if (username && roomCode) {
         socket.emit('joinRoom', { username, roomCode });
         document.getElementById('loginScreen').classList.add('hidden');
         document.getElementById('lobbyScreen').classList.remove('hidden');
-        document.getElementById('roomTitle').innerText = "Room Code: " + roomCode;
+        document.getElementById('roomTitle').innerText = "Room: " + roomCode;
       }
     }
 
     function startGame() { socket.emit('startGame'); }
-    function playCard(cardId) { socket.emit('playCard', cardId); }
     function drawCard() { socket.emit('drawCard'); }
+
+    function handleCardClick(cardId, color, element) {
+      if (color === 'Wild') {
+        pendingWildCardId = cardId;
+        document.getElementById('colorModal').classList.remove('hidden');
+      } else {
+        animatePlay(element, () => {
+          socket.emit('playCard', { cardId });
+        });
+      }
+    }
+
+    function selectWildColor(chosenColor) {
+      document.getElementById('colorModal').classList.add('hidden');
+      if (pendingWildCardId) {
+        socket.emit('playCard', { cardId: pendingWildCardId, chosenColor });
+        pendingWildCardId = null;
+      }
+    }
+
+    function animatePlay(cardElem, callback) {
+      if (!cardElem) return callback();
+
+      const rect = cardElem.getBoundingClientRect();
+      const pileRect = document.getElementById('pileArea').getBoundingClientRect();
+
+      const clone = cardElem.cloneNode(true);
+      clone.classList.add('fly-card');
+      clone.style.top = rect.top + 'px';
+      clone.style.left = rect.left + 'px';
+      document.body.appendChild(clone);
+
+      setTimeout(() => {
+        clone.style.top = (pileRect.top + 10) + 'px';
+        clone.style.left = (pileRect.left + 20) + 'px';
+        clone.style.transform = 'rotate(360deg) scale(1.05)';
+      }, 10);
+
+      setTimeout(() => {
+        clone.remove();
+        callback();
+      }, 380);
+    }
 
     socket.on('errorMsg', (msg) => { alert(msg); location.reload(); });
 
     socket.on('updateLobby', (players) => {
-      const list = document.getElementById('playerList');
-      list.innerHTML = players.map(p => `<li>🎮 ${p.name}</li>`).join('');
+      document.getElementById('playerList').innerHTML = players.map(p => `<li>🎮 ${p.name}</li>`).join('');
     });
 
-    // Helper function to render a styled card
-    function renderCardHtml(card, index = 0, onClickFn = '') {
+    socket.on('timerUpdate', (secondsLeft) => {
+      const fill = document.getElementById('timerFill');
+      fill.style.width = (secondsLeft * 10) + '%';
+    });
+
+    function createCardMarkup(c, zIndex = 0, styleStr = '', onClickAttr = '') {
       return `
-        <div class="card ${card.color}" style="z-index: ${index};" onclick="${onClickFn}">
-          <div class="corner">${card.value}</div>
-          <div class="center-oval">
-            <span class="center-number">${card.value}</span>
-          </div>
+        <div class="card ${c.color}" style="z-index:${zIndex}; ${styleStr}" ${onClickAttr}>
+          <div class="corner">${c.value}</div>
+          <div class="center-oval"><span class="center-number">${c.value}</span></div>
         </div>
       `;
     }
@@ -156,26 +239,31 @@
       document.getElementById('lobbyScreen').classList.add('hidden');
       document.getElementById('gameScreen').classList.remove('hidden');
 
-      document.getElementById('turnDisplay').innerText = "Turn: " + data.currentTurn;
-      document.getElementById('topCard').innerHTML = renderCardHtml(data.topCard);
+      document.getElementById('currentTurn').innerText = data.currentTurn;
+      document.getElementById('nextTurn').innerText = data.nextTurn;
 
-      // Render Leaderboard
+      const pileArea = document.getElementById('pileArea');
+      pileArea.innerHTML = data.discardPile.map((c, i) => {
+        const transformStr = `transform: translate(${c.offsetX}px, ${c.offsetY}px) rotate(${c.rot}deg);`;
+        return createCardMarkup(c, i, transformStr);
+      }).join('');
+
       if (data.leaderboard && data.leaderboard.length > 0) {
         document.getElementById('leaderboardBox').classList.remove('hidden');
-        const lbList = document.getElementById('leaderboardList');
-        lbList.innerHTML = data.leaderboard.map(name => `<li>${name}</li>`).join('');
+        document.getElementById('leaderboardList').innerHTML = data.leaderboard.map(n => `<li>${n}</li>`).join('');
       }
     });
 
     socket.on('yourHand', (cards) => {
       const handDiv = document.getElementById('hand');
-      handDiv.innerHTML = cards.map((c, idx) => 
-        renderCardHtml(c, idx, `playCard('${c.id}')`)
-      ).join('');
+      handDiv.innerHTML = cards.map((c, idx) => {
+        const clickCode = `onclick="handleCardClick('${c.id}', '${c.color}', this)"`;
+        return createCardMarkup(c, idx, '', clickCode);
+      }).join('');
     });
 
     socket.on('gameOver', (finalLeaderboard) => {
-      alert("🎉 Game Over!\n\nFinal Rankings:\n" + finalLeaderboard.map((name, i) => `${i + 1}. ${name}`).join('\n'));
+      alert("🎉 Game Over!\n\nRankings:\n" + finalLeaderboard.map((n, i) => `${i + 1}. ${n}`).join('\n'));
       location.reload();
     });
   </script>
