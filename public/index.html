@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Private Card Game</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #222; color: #fff; padding: 20px; }
+    input, button { padding: 12px; margin: 10px; font-size: 16px; border-radius: 8px; border: none; }
+    button { background-color: #28a745; color: white; cursor: pointer; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+  <!-- JOIN SCREEN -->
+  <div id="loginScreen">
+    <h1>Enter Game Passcode</h1>
+    <input type="text" id="username" placeholder="Your Name" /><br>
+    <input type="text" id="roomCode" placeholder="Room Code (e.g. 1234)" /><br>
+    <button onclick="join()">Join Lobby</button>
+  </div>
+
+  <!-- LOBBY & GAME SCREEN -->
+  <div id="gameScreen" class="hidden">
+    <h2 id="roomTitle"></h2>
+    <h3>Players in Lobby (Max 8):</h3>
+    <ul id="playerList" style="list-style:none; padding:0;"></ul>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    function join() {
+      const username = document.getElementById('username').value;
+      const roomCode = document.getElementById('roomCode').value;
+
+      if (username && roomCode) {
+        socket.emit('joinRoom', { username, roomCode });
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('gameScreen').classList.remove('hidden');
+        document.getElementById('roomTitle').innerText = "Room Code: " + roomCode;
+      }
+    }
+
+    socket.on('errorMsg', (msg) => {
+      alert(msg);
+      location.reload();
+    });
+
+    socket.on('updateLobby', (players) => {
+      const list = document.getElementById('playerList');
+      list.innerHTML = players.map(p => `<li>🎮 ${p.name}</li>`).join('');
+    });
+  </script>
+</body>
+</html>
