@@ -47,7 +47,7 @@ function startTurnTimer(roomCode) {
   if (!room) return;
 
   if (room.timer) clearInterval(room.timer);
-  room.timeLeft = 30; // 30-second timer
+  room.timeLeft = 30;
 
   io.to(roomCode).emit('timerUpdate', room.timeLeft);
 
@@ -121,6 +121,16 @@ function addCardToPile(room, card) {
   if (room.discardPile.length > 6) room.discardPile.shift();
 }
 
+function emitLobbyUpdate(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return;
+  io.to(roomCode).emit('updateLobby', {
+    players: room.players,
+    hostId: room.hostId,
+    rules: room.rules
+  });
+}
+
 io.on('connection', (socket) => {
 
   socket.on('getLobbies', () => {
@@ -130,6 +140,7 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', ({ username, roomCode, avatar }) => {
     if (!rooms[roomCode]) {
       rooms[roomCode] = { 
+        hostId: socket.id,
         players: [], gameStarted: false, deck: [], discardPile: [], 
         currentTurnIndex: 0, leaderboard: [], direction: 1, timer: null, timeLeft: 30, roomCode,
         stackedDraw: 0, rules: { allowStacking: true, jumpIn: true, '70Rule': true }, unoCalled: {}
@@ -146,21 +157,22 @@ io.on('connection', (socket) => {
     socket.avatar = avatar || '🤠';
 
     room.players.push({ id: socket.id, name: username, avatar: socket.avatar, cards: [], finished: false });
-    io.to(roomCode).emit('updateLobby', room.players);
+    emitLobbyUpdate(roomCode);
     broadcastLobbies();
   });
 
   socket.on('updateRules', (newRules) => {
     const room = rooms[socket.roomCode];
-    if (room) {
+    if (room && room.hostId === socket.id) {
       room.rules = { ...room.rules, ...newRules };
       io.to(socket.roomCode).emit('rulesUpdated', room.rules);
+      emitLobbyUpdate(socket.roomCode);
     }
   });
 
   socket.on('requestStartGame', () => {
     const room = rooms[socket.roomCode];
-    if (!room || room.players.length < 2) return;
+    if (!room || room.hostId !== socket.id || room.players.length < 2) return;
 
     let count = 3;
     const startInterval = setInterval(() => {
@@ -362,8 +374,15 @@ io.on('connection', (socket) => {
     if (socket.roomCode && rooms[socket.roomCode]) {
       const room = rooms[socket.roomCode];
       room.players = room.players.filter(p => p.id !== socket.id);
-      io.to(socket.roomCode).emit('updateLobby', room.players);
-      if (room.players.length === 0) delete rooms[socket.roomCode];
+
+      if (room.players.length > 0) {
+        if (room.hostId === socket.id) {
+          room.hostId = room.players[0].id;
+        }
+        emitLobbyUpdate(socket.roomCode);
+      } else {
+        delete rooms[socket.roomCode];
+      }
       broadcastLobbies();
     }
   });
