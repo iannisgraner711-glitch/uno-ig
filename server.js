@@ -47,7 +47,7 @@ function startTurnTimer(roomCode) {
   if (!room) return;
 
   if (room.timer) clearInterval(room.timer);
-  room.timeLeft = 30;
+  room.timeLeft = 30; // 30-second timer
 
   io.to(roomCode).emit('timerUpdate', room.timeLeft);
 
@@ -67,12 +67,10 @@ function handleTurnTimeout(roomCode) {
   if (!room || !room.gameStarted) return;
 
   const currentPlayer = room.players[room.currentTurnIndex];
-  
-  // If player was forced to draw stacked cards and timed out
   const drawAmount = room.stackedDraw > 0 ? room.stackedDraw : 1;
   room.stackedDraw = 0;
 
-  for(let i=0; i<drawAmount; i++) {
+  for (let i = 0; i < drawAmount; i++) {
     if (room.deck.length === 0) room.deck = createDeck();
     currentPlayer.cards.push(room.deck.pop());
   }
@@ -133,8 +131,8 @@ io.on('connection', (socket) => {
     if (!rooms[roomCode]) {
       rooms[roomCode] = { 
         players: [], gameStarted: false, deck: [], discardPile: [], 
-        currentTurnIndex: 0, leaderboard: [], direction: 1, timer: null, timeLeft: 10, roomCode,
-       stackedDraw: 0, rules: { allowStacking: true, jumpIn: true, '70Rule': true }, unoCalled: {}
+        currentTurnIndex: 0, leaderboard: [], direction: 1, timer: null, timeLeft: 30, roomCode,
+        stackedDraw: 0, rules: { allowStacking: true, jumpIn: true, '70Rule': true }, unoCalled: {}
       };
     }
 
@@ -217,14 +215,12 @@ io.on('connection', (socket) => {
     const played = playerObj.cards[idx];
     const top = room.discardPile[room.discardPile.length - 1];
 
-    // Jump-In Rule check (exact match played out of turn)
     const isJumpIn = room.rules.jumpIn && !isTurn && played.color === top.color && played.value === top.value;
 
     if (!isTurn && !isJumpIn) {
       return socket.emit('invalidPlay', cardId);
     }
 
-    // Stacking Check
     if (room.stackedDraw > 0 && room.rules.allowStacking) {
       if (played.value !== '+2' && played.value !== '+4') {
         return socket.emit('invalidPlay', cardId);
@@ -240,7 +236,6 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // If Jump-In occurred, snap current turn to this player
     if (isJumpIn) {
       room.currentTurnIndex = room.players.findIndex(p => p.id === socket.id);
     }
@@ -252,10 +247,8 @@ io.on('connection', (socket) => {
     playerObj.cards.splice(idx, 1);
     addCardToPile(room, played);
 
-    // 7-0 Rule Logic
     if (room.rules['70Rule']) {
       if (played.value === '0') {
-        // Rotate hands all around
         const lastHand = room.players[room.players.length - 1].cards;
         for (let i = room.players.length - 1; i > 0; i--) {
           room.players[i].cards = room.players[i - 1].cards;
@@ -273,7 +266,6 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Wild Swap Hand
     if (played.value === 'Swap' && swapTargetId) {
       const target = room.players.find(p => p.id === swapTargetId);
       if (target) {
@@ -345,7 +337,7 @@ io.on('connection', (socket) => {
     if (!room) return;
     const target = room.players.find(p => p.id === targetId);
     if (target && target.cards.length === 1 && !room.unoCalled[targetId]) {
-      for(let i=0; i<2; i++) {
+      for (let i = 0; i < 2; i++) {
         if (room.deck.length === 0) room.deck = createDeck();
         target.cards.push(room.deck.pop());
       }
