@@ -26,9 +26,20 @@ function createDeck() {
     for (let j = 0; j < 4; j++) {
       deck.push({ color: 'Wild', value: 'Wild', id: Math.random().toString(36).substr(2, 9) });
       deck.push({ color: 'Wild', value: '+4', id: Math.random().toString(36).substr(2, 9) });
+      deck.push({ color: 'Wild', value: 'Swap', id: Math.random().toString(36).substr(2, 9) });
     }
   }
   return deck.sort(() => Math.random() - 0.5);
+}
+
+function broadcastLobbies() {
+  const list = Object.keys(rooms).map(code => ({
+    code,
+    players: rooms[code].players.length,
+    started: rooms[code].gameStarted
+  })).filter(r => !r.started && r.players < 12);
+
+  io.emit('lobbyList', list);
 }
 
 function startTurnTimer(roomCode) {
@@ -56,10 +67,15 @@ function handleTurnTimeout(roomCode) {
   if (!room || !room.gameStarted) return;
 
   const currentPlayer = room.players[room.currentTurnIndex];
-  if (room.deck.length === 0) room.deck = createDeck();
+  
+  // If player was forced to draw stacked cards and timed out
+  const drawAmount = room.stackedDraw > 0 ? room.stackedDraw : 1;
+  room.stackedDraw = 0;
 
-  const drawn = room.deck.pop();
-  currentPlayer.cards.push(drawn);
+  for(let i=0; i<drawAmount; i++) {
+    if (room.deck.length === 0) room.deck = createDeck();
+    currentPlayer.cards.push(room.deck.pop());
+  }
 
   io.to(currentPlayer.id).emit('yourHand', currentPlayer.cards);
   advanceTurn(room, 1);
@@ -90,7 +106,9 @@ function advanceTurn(room, steps = 1) {
     currentTurn: room.players[room.currentTurnIndex].name,
     nextTurn: nextPlayer.name,
     leaderboard: room.leaderboard,
-    direction: room.direction
+    direction: room.direction,
+    stackedDraw: room.stackedDraw,
+    rules: room.rules
   });
 
   startTurnTimer(room.roomCode);
@@ -107,11 +125,16 @@ function addCardToPile(room, card) {
 
 io.on('connection', (socket) => {
 
-  socket.on('joinRoom', ({ username, roomCode }) => {
+  socket.on('getLobbies', () => {
+    broadcastLobbies();
+  });
+
+  socket.on('joinRoom', ({ username, roomCode, avatar }) => {
     if (!rooms[roomCode]) {
       rooms[roomCode] = { 
         players: [], gameStarted: false, deck: [], discardPile: [], 
-        currentTurnIndex: 0, leaderboard: [], direction: 1, timer: null, timeLeft: 10, roomCode
+        currentTurnIndex: 0, leaderboard: [], direction: 1, timer: null, timeLeft: 10, roomCode,
+        stackedDraw: 0, rules: { allowStacking: true, jumpIn: true, 70Rule: true }, unoCalled: {}
       };
     }
 
@@ -122,9 +145,19 @@ io.on('connection', (socket) => {
     socket.join(roomCode);
     socket.roomCode = roomCode;
     socket.username = username;
+    socket.avatar = avatar || '🤠';
 
-    room.players.push({ id: socket.id, name: username, cards: [], finished: false });
+    room.players.push({ id: socket.id, name: username, avatar: socket.avatar, cards: [], finished: false });
     io.to(roomCode).emit('updateLobby', room.players);
+    broadcastLobbies();
+  });
+
+  socket.on('updateRules', (newRules) => {
+    const room = rooms[socket.roomCode];
+    if (room) {
+      room.rules = { ...room.rules, ...newRules };
+      io.to(socket.roomCode).emit('rulesUpdated', room.rules);
+    }
   });
 
   socket.on('requestStartGame', () => {
@@ -148,6 +181,7 @@ io.on('connection', (socket) => {
     room.leaderboard = [];
     room.discardPile = [];
     room.direction = 1;
+    room.stackedDraw = 0;
 
     room.players.forEach(p => {
       p.cards = room.deck.splice(0, 7);
@@ -163,41 +197,96 @@ io.on('connection', (socket) => {
     addCardToPile(room, top);
 
     room.currentTurnIndex = 0;
+    broadcastLobbies();
     advanceTurn(room, 0);
   }
 
-  socket.on('playCard', ({ cardId, chosenColor }) => {
+  socket.on('playCard', ({ cardId, chosenColor, swapTargetId }) => {
     const room = rooms[socket.roomCode];
     if (!room || !room.gameStarted) return;
 
     const player = room.players[room.currentTurnIndex];
-    if (player.id !== socket.id || player.finished) return;
+    const isTurn = player.id === socket.id;
+    const playerObj = room.players.find(p => p.id === socket.id);
 
-    const idx = player.cards.findIndex(c => c.id === cardId);
+    if (!playerObj || playerObj.finished) return;
+
+    const idx = playerObj.cards.findIndex(c => c.id === cardId);
     if (idx === -1) return;
 
-    const played = player.cards[idx];
+    const played = playerObj.cards[idx];
     const top = room.discardPile[room.discardPile.length - 1];
+
+    // Jump-In Rule check (exact match played out of turn)
+    const isJumpIn = room.rules.jumpIn && !isTurn && played.color === top.color && played.value === top.value;
+
+    if (!isTurn && !isJumpIn) {
+      return socket.emit('invalidPlay', cardId);
+    }
+
+    // Stacking Check
+    if (room.stackedDraw > 0 && room.rules.allowStacking) {
+      if (played.value !== '+2' && played.value !== '+4') {
+        return socket.emit('invalidPlay', cardId);
+      }
+    }
 
     const isMatch = played.color === 'Wild' || 
                     played.color === top.color || 
-                    played.value === top.value;
+                    played.value === top.value || isJumpIn;
 
     if (!isMatch) {
       socket.emit('invalidPlay', cardId);
       return;
     }
 
+    // If Jump-In occurred, snap current turn to this player
+    if (isJumpIn) {
+      room.currentTurnIndex = room.players.findIndex(p => p.id === socket.id);
+    }
+
     socket.emit('validPlay', cardId);
 
     if (played.color === 'Wild') played.color = chosenColor || 'Red';
 
-    player.cards.splice(idx, 1);
+    playerObj.cards.splice(idx, 1);
     addCardToPile(room, played);
 
-    if (player.cards.length === 0) {
-      player.finished = true;
-      room.leaderboard.push(player.name);
+    // 7-0 Rule Logic
+    if (room.rules['70Rule']) {
+      if (played.value === '0') {
+        // Rotate hands all around
+        const lastHand = room.players[room.players.length - 1].cards;
+        for (let i = room.players.length - 1; i > 0; i--) {
+          room.players[i].cards = room.players[i - 1].cards;
+        }
+        room.players[0].cards = lastHand;
+        room.players.forEach(p => io.to(p.id).emit('yourHand', p.cards));
+      } else if (played.value === '7' && swapTargetId) {
+        const target = room.players.find(p => p.id === swapTargetId);
+        if (target) {
+          const temp = playerObj.cards;
+          playerObj.cards = target.cards;
+          target.cards = temp;
+          io.to(target.id).emit('yourHand', target.cards);
+        }
+      }
+    }
+
+    // Wild Swap Hand
+    if (played.value === 'Swap' && swapTargetId) {
+      const target = room.players.find(p => p.id === swapTargetId);
+      if (target) {
+        const temp = playerObj.cards;
+        playerObj.cards = target.cards;
+        target.cards = temp;
+        io.to(target.id).emit('yourHand', target.cards);
+      }
+    }
+
+    if (playerObj.cards.length === 0) {
+      playerObj.finished = true;
+      room.leaderboard.push(playerObj.name);
     }
 
     if (getActivePlayers(room).length <= 1) {
@@ -212,19 +301,16 @@ io.on('connection', (socket) => {
     if (played.value === 'Skip') skipSteps = 2;
 
     if (played.value === '+2' || played.value === '+4') {
-      const drawCount = played.value === '+2' ? 2 : 4;
-      const targetIdx = (room.currentTurnIndex + room.direction + room.players.length) % room.players.length;
-      const targetPlayer = room.players[targetIdx];
-
-      for (let i = 0; i < drawCount; i++) {
-        if (room.deck.length === 0) room.deck = createDeck();
-        targetPlayer.cards.push(room.deck.pop());
+      const penalty = played.value === '+2' ? 2 : 4;
+      if (room.rules.allowStacking) {
+        room.stackedDraw += penalty;
+      } else {
+        room.stackedDraw = penalty;
+        skipSteps = 2;
       }
-      io.to(targetPlayer.id).emit('yourHand', targetPlayer.cards);
-      skipSteps = 2;
     }
 
-    socket.emit('yourHand', player.cards);
+    socket.emit('yourHand', playerObj.cards);
     advanceTurn(room, skipSteps);
   });
 
@@ -235,11 +321,49 @@ io.on('connection', (socket) => {
     const player = room.players[room.currentTurnIndex];
     if (player.id !== socket.id || player.finished) return;
 
-    if (room.deck.length === 0) room.deck = createDeck();
-    player.cards.push(room.deck.pop());
+    const drawCount = room.stackedDraw > 0 ? room.stackedDraw : 1;
+    room.stackedDraw = 0;
+
+    for (let i = 0; i < drawCount; i++) {
+      if (room.deck.length === 0) room.deck = createDeck();
+      player.cards.push(room.deck.pop());
+    }
 
     socket.emit('yourHand', player.cards);
     advanceTurn(room, 1);
+  });
+
+  socket.on('callUno', () => {
+    const room = rooms[socket.roomCode];
+    if (!room) return;
+    room.unoCalled[socket.id] = true;
+    io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🚨 ${socket.username} called UNO!` });
+  });
+
+  socket.on('catchUno', (targetId) => {
+    const room = rooms[socket.roomCode];
+    if (!room) return;
+    const target = room.players.find(p => p.id === targetId);
+    if (target && target.cards.length === 1 && !room.unoCalled[targetId]) {
+      for(let i=0; i<2; i++) {
+        if (room.deck.length === 0) room.deck = createDeck();
+        target.cards.push(room.deck.pop());
+      }
+      io.to(target.id).emit('yourHand', target.cards);
+      io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🎯 ${socket.username} caught ${target.name} for not calling UNO! +2 cards!` });
+    }
+  });
+
+  socket.on('sendChat', (text) => {
+    if (socket.roomCode) {
+      io.to(socket.roomCode).emit('chatMessage', { sender: socket.username, text });
+    }
+  });
+
+  socket.on('sendEmoji', (emoji) => {
+    if (socket.roomCode) {
+      io.to(socket.roomCode).emit('displayEmoji', { username: socket.username, emoji });
+    }
   });
 
   socket.on('disconnect', () => {
@@ -247,6 +371,8 @@ io.on('connection', (socket) => {
       const room = rooms[socket.roomCode];
       room.players = room.players.filter(p => p.id !== socket.id);
       io.to(socket.roomCode).emit('updateLobby', room.players);
+      if (room.players.length === 0) delete rooms[socket.roomCode];
+      broadcastLobbies();
     }
   });
 });

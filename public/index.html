@@ -2,11 +2,19 @@
 <html lang="en">
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Private Card Game</title>
+  <title>Private Card Game Deluxe</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; background: #121212; color: #fff; margin: 0; padding: 10px; overflow-x: hidden; }
-    input, button { padding: 12px; margin: 6px; font-size: 16px; border-radius: 8px; border: none; }
-    button { background-color: #28a745; color: white; font-weight: bold; cursor: pointer; }
+    :root {
+      --bg-color: #121212;
+      --panel-bg: #1e1e1e;
+    }
+    body.theme-wood { --bg-color: #2e1d0c; --panel-bg: #422b15; }
+    body.theme-neon { --bg-color: #0d0221; --panel-bg: #190933; }
+
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: var(--bg-color); color: #fff; margin: 0; padding: 10px; overflow-x: hidden; transition: background 0.3s ease; }
+    input, button, select { padding: 12px; margin: 6px; font-size: 16px; border-radius: 8px; border: none; outline: none; }
+    button { background-color: #28a745; color: white; font-weight: bold; cursor: pointer; transition: transform 0.1s; }
+    button:active { transform: scale(0.95); }
 
     .hidden { display: none !important; }
 
@@ -28,6 +36,7 @@
       box-sizing: border-box;
       transition: transform 0.25s ease, top 0.25s ease;
     }
+    .card:hover { transform: translateY(-15px) scale(1.08) !important; z-index: 100 !important; }
     .card .corner { position: absolute; top: 4px; left: 5px; font-size: 11px; font-weight: bold; }
     .card .center-oval {
       width: 50px;
@@ -47,22 +56,20 @@
     /* CARD COLORS */
     .Red { background-color: #e74c3c; color: white; }
     .Red .center-number { color: #e74c3c; }
-    
     .Blue { background-color: #2980b9; color: white; }
     .Blue .center-number { color: #2980b9; }
-    
     .Green { background-color: #27ae60; color: white; }
     .Green .center-number { color: #27ae60; }
-    
     .Yellow { background-color: #f1c40f; color: black; }
     .Yellow .center-number { color: #f1c40f; }
-
     .Wild { background: linear-gradient(135deg, #e74c3c, #2980b9, #27ae60, #f1c40f); color: white; }
     .Wild .center-number { color: #111; }
 
-    /* DISCARD PILE */
-    .pile-area { position: relative; width: 120px; height: 130px; margin: 10px auto; }
-    .pile-area .card { position: absolute; top: 0; left: 20px; }
+    /* DISCARD PILE & ROTATION ARROW */
+    .pile-area { position: relative; width: 140px; height: 140px; margin: 10px auto; display: flex; align-items: center; justify-content: center; }
+    .pile-area .card { position: absolute; }
+    .direction-arrow { position: absolute; width: 130px; height: 130px; border: 3px dashed #f1c40f; border-radius: 50%; pointer-events: none; transition: transform 0.5s ease; }
+    .direction-arrow.reverse { transform: rotate(-180deg); border-color: #e74c3c; }
 
     /* CURVED FAN HAND */
     .hand-container {
@@ -79,10 +86,7 @@
     }
 
     /* SHAKE ANIMATION FOR INVALID TAPS */
-    .shake {
-      animation: shakeAnim 0.35s ease-in-out;
-      border-color: #ff3333 !important;
-    }
+    .shake { animation: shakeAnim 0.35s ease-in-out; border-color: #ff3333 !important; }
     @keyframes shakeAnim {
       0% { transform: translateX(0); }
       20% { transform: translateX(-8px) rotate(-5deg); }
@@ -99,59 +103,138 @@
       pointer-events: none;
     }
 
-    .leaderboard { background: #222; padding: 10px; border-radius: 8px; margin: 10px auto; max-width: 280px; text-align: left; }
-    .color-picker { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 300; }
-    .color-box { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 200px; height: 200px; }
-    .color-box button { width: 100%; height: 100%; margin: 0; border-radius: 12px; font-size: 18px; }
+    /* LOBBY BROWSER MODAL */
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 300; }
+    .modal-card { background: var(--panel-bg); padding: 20px; border-radius: 12px; width: 320px; max-height: 80vh; overflow-y: auto; text-align: left; }
+    
+    .lobby-item { background: #222; padding: 10px; margin: 6px 0; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+
+    /* EMOJI FLOATING ANIMATION */
+    .floating-emoji { position: fixed; font-size: 40px; z-index: 999; animation: floatUp 2s forwards; pointer-events: none; }
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translateY(0) scale(1); }
+      100% { opacity: 0; transform: translateY(-150px) scale(1.5); }
+    }
+
+    /* CHAT PANEL */
+    .chat-box { background: rgba(0,0,0,0.5); width: 90%; max-width: 400px; height: 100px; overflow-y: auto; margin: 10px auto; border-radius: 6px; padding: 6px; text-align: left; font-size: 13px; }
   </style>
 </head>
 <body>
 
+  <!-- LOGIN SCREEN -->
   <div id="loginScreen">
     <h1>Private Card Game</h1>
     <input type="text" id="username" placeholder="Your Name" /><br>
+    <select id="avatarSelect">
+      <option value="🤠">🤠 Cowboy</option>
+      <option value="🤖">🤖 Robot</option>
+      <option value="🦊">🦊 Fox</option>
+      <option value="0️⃣">🥷 Ninja</option>
+      <option value="👑">👑 Crown</option>
+    </select><br>
     <input type="text" id="roomCode" placeholder="Room Code (e.g. 1234)" /><br>
-    <button onclick="join()">Join Lobby</button>
+    <button onclick="joinDirect()">Join / Create Room</button><br>
+    <button onclick="openLobbyBrowser()" style="background-color: #17a2b8;">🌐 Browse Lobbies</button>
   </div>
 
+  <!-- LOBBY BROWSER MODAL -->
+  <div id="lobbyBrowserModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3>Available Lobbies</h3>
+      <div id="lobbyListContainer">Loading...</div>
+      <button onclick="closeLobbyBrowser()" style="background-color: #6c757d; width: 100%;">Close</button>
+    </div>
+  </div>
+
+  <!-- LOBBY SCREEN -->
   <div id="lobbyScreen" class="hidden">
     <h2 id="roomTitle"></h2>
     <h3 id="countdownDisplay" style="color:#f1c40f;"></h3>
-    <h3>Players in Lobby:</h3>
+    
+    <div style="background: var(--panel-bg); padding: 10px; border-radius: 8px; margin: 10px auto; max-width: 300px;">
+      <h4>⚙️ House Rules</h4>
+      <label><input type="checkbox" id="ruleStacking" checked onchange="updateRules()"> Allow +2/+4 Stacking</label><br>
+      <label><input type="checkbox" id="ruleJumpIn" checked onchange="updateRules()"> Allow Jump-In</label><br>
+      <label><input type="checkbox" id="rule70" checked onchange="updateRules()"> 7-0 Rule</label>
+    </div>
+
+    <h3>Players:</h3>
     <ul id="playerList" style="list-style:none; padding:0;"></ul>
     <button id="startBtn" onclick="requestStart()" style="background-color: #007bff;">Start Game</button>
   </div>
 
+  <!-- GAME SCREEN -->
   <div id="gameScreen" class="hidden">
+    <div style="position: absolute; top: 10px; right: 10px;">
+      <select onchange="changeTheme(this.value)">
+        <option value="dark">Dark Theme</option>
+        <option value="wood">Wood Table</option>
+        <option value="neon">Neon Table</option>
+      </select>
+    </div>
+
     <div class="turn-bar">
       Current: <span id="currentTurn" style="color:#2ecc71;">--</span><br>
       <small style="color:#aaa;">Next up: <span id="nextTurn">--</span></small>
+      <div id="stackIndicator" style="color:#e74c3c; font-weight:bold;"></div>
     </div>
 
     <div class="timer-container">
       <div id="timerFill" class="timer-fill"></div>
     </div>
 
-    <div id="leaderboardBox" class="leaderboard hidden">
-      <strong>🏆 Finishers:</strong>
-      <ol id="leaderboardList" style="margin: 5px 0; padding-left: 20px;"></ol>
+    <div class="pile-area" id="pileArea">
+      <div id="dirArrow" class="direction-arrow"></div>
     </div>
 
-    <p style="margin: 5px 0;">Discard Pile:</p>
-    <div id="pileArea" class="pile-area"></div>
+    <div>
+      <button onclick="drawCard()" style="background-color: #e67e22;">Draw Card</button>
+      <button onclick="callUno()" style="background-color: #e74c3c;">🚨 UNO!</button>
+      <button onclick="openCatchModal()" style="background-color: #fd7e14;">🎯 Catch!</button>
+    </div>
 
-    <button onclick="drawCard()" style="background-color: #e67e22; margin-top: 15px;">Draw Card</button>
+    <div style="margin-top: 5px;">
+      <button onclick="sendEmoji('😂')">😂</button>
+      <button onclick="sendEmoji('🤬')">🤬</button>
+      <button onclick="sendEmoji('💩')">💩</button>
+      <button onclick="sendEmoji('⏱️')">⏱️</button>
+    </div>
 
     <h3>Your Hand:</h3>
     <div id="hand" class="hand-container"></div>
+
+    <div class="chat-box" id="chatBox"></div>
+    <input type="text" id="chatInput" placeholder="Send chat..." onkeydown="if(event.key==='Enter') sendChat()"/>
   </div>
 
-  <div id="colorModal" class="color-picker hidden">
-    <div class="color-box">
-      <button class="Red" onclick="selectWildColor('Red')">Red</button>
-      <button class="Blue" onclick="selectWildColor('Blue')">Blue</button>
-      <button class="Green" onclick="selectWildColor('Green')">Green</button>
-      <button class="Yellow" onclick="selectWildColor('Yellow')">Yellow</button>
+  <!-- COLOR PICKER MODAL -->
+  <div id="colorModal" class="modal-overlay hidden">
+    <div class="modal-card" style="text-align: center;">
+      <h3>Select Wild Color</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; height: 150px;">
+        <button class="Red" onclick="selectWildColor('Red')">Red</button>
+        <button class="Blue" onclick="selectWildColor('Blue')">Blue</button>
+        <button class="Green" onclick="selectWildColor('Green')">Green</button>
+        <button class="Yellow" onclick="selectWildColor('Yellow')">Yellow</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SWAP PLAYER TARGET MODAL -->
+  <div id="swapModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3>Select Target Player to Swap Hands</h3>
+      <div id="swapPlayerList"></div>
+    </div>
+  </div>
+
+  <!-- CATCH UNO MODAL -->
+  <div id="catchModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3>Who forgot to call UNO?</h3>
+      <div id="catchPlayerList"></div>
+      <button onclick="document.getElementById('catchModal').classList.add('hidden')" style="background-color:#6c757d; width:100%;">Cancel</button>
     </div>
   </div>
 
@@ -159,23 +242,103 @@
   <script>
     const socket = io();
     let pendingWildCardId = null;
+    let pendingSwapCardId = null;
+    let activePlayersList = [];
 
-    function join() {
+    // AUDIO SYNTHESIZER FOR SOUND EFFECTS
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === 'play') {
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+      } else if (type === 'error') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+      } else if (type === 'uno') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(523, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(659, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+      }
+    }
+
+    function changeTheme(theme) {
+      document.body.className = '';
+      if (theme !== 'dark') document.body.classList.add('theme-' + theme);
+    }
+
+    function joinDirect() {
       const username = document.getElementById('username').value;
       const roomCode = document.getElementById('roomCode').value;
+      const avatar = document.getElementById('avatarSelect').value;
       if (username && roomCode) {
-        socket.emit('joinRoom', { username, roomCode });
+        socket.emit('joinRoom', { username, roomCode, avatar });
         document.getElementById('loginScreen').classList.add('hidden');
         document.getElementById('lobbyScreen').classList.remove('hidden');
         document.getElementById('roomTitle').innerText = "Room: " + roomCode;
       }
     }
 
+    function openLobbyBrowser() {
+      document.getElementById('lobbyBrowserModal').classList.remove('hidden');
+      socket.emit('getLobbies');
+    }
+
+    function closeLobbyBrowser() {
+      document.getElementById('lobbyBrowserModal').classList.add('hidden');
+    }
+
+    socket.on('lobbyList', (lobbies) => {
+      const container = document.getElementById('lobbyListContainer');
+      if (lobbies.length === 0) {
+        container.innerHTML = '<p style="color:#aaa;">No active lobbies found. Create one!</p>';
+        return;
+      }
+      container.innerHTML = lobbies.map(l => `
+        <div class="lobby-item">
+          <div><strong>Room ${l.code}</strong> (${l.players}/12)</div>
+          <button onclick="joinFromBrowser('${l.code}')">Join</button>
+        </div>
+      `).join('');
+    });
+
+    function joinFromBrowser(code) {
+      document.getElementById('roomCode').value = code;
+      closeLobbyBrowser();
+      joinDirect();
+    }
+
+    function updateRules() {
+      socket.emit('updateRules', {
+        allowStacking: document.getElementById('ruleStacking').checked,
+        jumpIn: document.getElementById('ruleJumpIn').checked,
+        '70Rule': document.getElementById('rule70').checked
+      });
+    }
+
     function requestStart() { socket.emit('requestStartGame'); }
     function drawCard() { socket.emit('drawCard'); }
+    function callUno() { playSound('uno'); socket.emit('callUno'); }
 
-    function handleCardClick(cardId, color) {
-      if (color === 'Wild') {
+    function handleCardClick(cardId, color, val) {
+      if (val === 'Swap' || val === '7') {
+        pendingSwapCardId = cardId;
+        openSwapModal(color);
+      } else if (color === 'Wild') {
         pendingWildCardId = cardId;
         document.getElementById('colorModal').classList.remove('hidden');
       } else {
@@ -183,20 +346,62 @@
       }
     }
 
-    function selectWildColor(chosenColor) {
-      document.getElementById('colorModal').classList.add('hidden');
-      if (pendingWildCardId) {
-        socket.emit('playCard', { cardId: pendingWildCardId, chosenColor });
-        pendingWildCardId = null;
+    function openSwapModal(color) {
+      const container = document.getElementById('swapPlayerList');
+      container.innerHTML = activePlayersList
+        .filter(p => p.id !== socket.id)
+        .map(p => `<button onclick="confirmSwap('${p.id}', '${color}')" style="width:100%; margin:4px 0;">Swap with ${p.avatar} ${p.name}</button>`)
+        .join('');
+      document.getElementById('swapModal').classList.remove('hidden');
+    }
+
+    function confirmSwap(targetId, color) {
+      document.getElementById('swapModal').classList.add('hidden');
+      if (color === 'Wild') {
+        pendingWildCardId = pendingSwapCardId;
+        document.getElementById('colorModal').classList.remove('hidden');
+        // Store target for wild step
+        window.tempSwapTarget = targetId;
+      } else {
+        socket.emit('playCard', { cardId: pendingSwapCardId, swapTargetId: targetId });
       }
     }
 
+    function selectWildColor(chosenColor) {
+      document.getElementById('colorModal').classList.add('hidden');
+      if (pendingWildCardId) {
+        socket.emit('playCard', { 
+          cardId: pendingWildCardId, 
+          chosenColor, 
+          swapTargetId: window.tempSwapTarget 
+        });
+        pendingWildCardId = null;
+        window.tempSwapTarget = null;
+      }
+    }
+
+    function openCatchModal() {
+      const container = document.getElementById('catchPlayerList');
+      container.innerHTML = activePlayersList
+        .filter(p => p.id !== socket.id)
+        .map(p => `<button onclick="executeCatch('${p.id}')" style="width:100%; margin:4px 0;">Catch ${p.avatar} ${p.name}</button>`)
+        .join('');
+      document.getElementById('catchModal').classList.remove('hidden');
+    }
+
+    function executeCatch(targetId) {
+      document.getElementById('catchModal').classList.add('hidden');
+      socket.emit('catchUno', targetId);
+    }
+
     socket.on('validPlay', (cardId) => {
+      playSound('play');
       const cardElem = document.getElementById(`card-${cardId}`);
       if (cardElem) animatePlay(cardElem);
     });
 
     socket.on('invalidPlay', (cardId) => {
+      playSound('error');
       const cardElem = document.getElementById(`card-${cardId}`);
       if (cardElem) {
         cardElem.classList.add('shake');
@@ -231,7 +436,8 @@
     socket.on('errorMsg', (msg) => { alert(msg); location.reload(); });
 
     socket.on('updateLobby', (players) => {
-      document.getElementById('playerList').innerHTML = players.map(p => `<li>🎮 ${p.name}</li>`).join('');
+      activePlayersList = players;
+      document.getElementById('playerList').innerHTML = players.map(p => `<li>${p.avatar} ${p.name}</li>`).join('');
     });
 
     socket.on('timerUpdate', (secondsLeft) => {
@@ -241,6 +447,7 @@
     function getCardGraphic(val) {
       if (val === 'Reverse') return '⇄';
       if (val === 'Skip') return '⊘';
+      if (val === 'Swap') return '🔄';
       return val;
     }
 
@@ -261,16 +468,19 @@
       document.getElementById('currentTurn').innerText = data.currentTurn;
       document.getElementById('nextTurn').innerText = data.nextTurn;
 
-      const pileArea = document.getElementById('pileArea');
-      pileArea.innerHTML = data.discardPile.map((c, i) => {
-        const transformStr = `transform: translate(${c.offsetX}px, ${c.offsetY}px) rotate(${c.rot}deg);`;
-        return createCardMarkup(c, i, transformStr);
-      }).join('');
+      const stackBox = document.getElementById('stackIndicator');
+      stackBox.innerText = data.stackedDraw > 0 ? `🔥 +${data.stackedDraw} STACKED!` : '';
 
-      if (data.leaderboard && data.leaderboard.length > 0) {
-        document.getElementById('leaderboardBox').classList.remove('hidden');
-        document.getElementById('leaderboardList').innerHTML = data.leaderboard.map(n => `<li>${n}</li>`).join('');
-      }
+      const dirArrow = document.getElementById('dirArrow');
+      if (data.direction === -1) dirArrow.classList.add('reverse');
+      else dirArrow.classList.remove('reverse');
+
+      const pileArea = document.getElementById('pileArea');
+      pileArea.innerHTML = `<div id="dirArrow" class="${dirArrow.className}"></div>` + 
+        data.discardPile.map((c, i) => {
+          const transformStr = `transform: translate(${c.offsetX}px, ${c.offsetY}px) rotate(${c.rot}deg);`;
+          return createCardMarkup(c, i, transformStr);
+        }).join('');
     });
 
     socket.on('yourHand', (cards) => {
@@ -281,10 +491,38 @@
         const angle = (idx - (total - 1) / 2) * 6; 
         const yOffset = Math.abs(angle) * 0.8;
         const styleStr = `transform: rotate(${angle}deg) translateY(${yOffset}px);`;
-        const clickCode = `onclick="handleCardClick('${c.id}', '${c.color}')"`;
+        const clickCode = `onclick="handleCardClick('${c.id}', '${c.color}', '${c.value}')"`;
         
         return createCardMarkup(c, idx, styleStr, clickCode, c.id);
       }).join('');
+    });
+
+    function sendChat() {
+      const input = document.getElementById('chatInput');
+      if (input.value.trim()) {
+        socket.emit('sendChat', input.value.trim());
+        input.value = '';
+      }
+    }
+
+    socket.on('chatMessage', (data) => {
+      const box = document.getElementById('chatBox');
+      box.innerHTML += `<div><strong>${data.sender}:</strong> ${data.text}</div>`;
+      box.scrollTop = box.scrollHeight;
+    });
+
+    function sendEmoji(emoji) {
+      socket.emit('sendEmoji', emoji);
+    }
+
+    socket.on('displayEmoji', (data) => {
+      const el = document.createElement('div');
+      el.className = 'floating-emoji';
+      el.innerText = data.emoji;
+      el.style.left = (Math.random() * 60 + 20) + 'vw';
+      el.style.top = '60vh';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2000);
     });
 
     socket.on('gameOver', (finalLeaderboard) => {
