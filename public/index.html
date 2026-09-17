@@ -174,14 +174,12 @@
     function requestStart() { socket.emit('requestStartGame'); }
     function drawCard() { socket.emit('drawCard'); }
 
-    function handleCardClick(cardId, color, element) {
+    function handleCardClick(cardId, color) {
       if (color === 'Wild') {
         pendingWildCardId = cardId;
         document.getElementById('colorModal').classList.remove('hidden');
       } else {
-        animatePlay(element, () => {
-          socket.emit('playCard', { cardId });
-        });
+        socket.emit('playCard', { cardId });
       }
     }
 
@@ -193,9 +191,20 @@
       }
     }
 
-    function animatePlay(cardElem, callback) {
-      if (!cardElem) return callback();
+    socket.on('validPlay', (cardId) => {
+      const cardElem = document.getElementById(`card-${cardId}`);
+      if (cardElem) animatePlay(cardElem);
+    });
 
+    socket.on('invalidPlay', (cardId) => {
+      const cardElem = document.getElementById(`card-${cardId}`);
+      if (cardElem) {
+        cardElem.classList.add('shake');
+        setTimeout(() => cardElem.classList.remove('shake'), 400);
+      }
+    });
+
+    function animatePlay(cardElem) {
       const rect = cardElem.getBoundingClientRect();
       const pileRect = document.getElementById('pileArea').getBoundingClientRect();
 
@@ -211,19 +220,8 @@
         clone.style.transform = 'rotate(360deg) scale(1.05)';
       }, 10);
 
-      setTimeout(() => {
-        clone.remove();
-        callback();
-      }, 350);
+      setTimeout(() => clone.remove(), 350);
     }
-
-    socket.on('invalidPlay', (cardId) => {
-      const cardElem = document.getElementById(`card-${cardId}`);
-      if (cardElem) {
-        cardElem.classList.add('shake');
-        setTimeout(() => cardElem.classList.remove('shake'), 400);
-      }
-    });
 
     socket.on('startCountdown', (sec) => {
       document.getElementById('countdownDisplay').innerText = `Game starting in ${sec}...`;
@@ -280,11 +278,10 @@
       const total = cards.length;
       
       handDiv.innerHTML = cards.map((c, idx) => {
-        // Compute curved fan position
         const angle = (idx - (total - 1) / 2) * 6; 
         const yOffset = Math.abs(angle) * 0.8;
         const styleStr = `transform: rotate(${angle}deg) translateY(${yOffset}px);`;
-        const clickCode = `onclick="handleCardClick('${c.id}', '${c.color}', this)"`;
+        const clickCode = `onclick="handleCardClick('${c.id}', '${c.color}')"`;
         
         return createCardMarkup(c, idx, styleStr, clickCode, c.id);
       }).join('');

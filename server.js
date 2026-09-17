@@ -23,7 +23,6 @@ function createDeck() {
         deck.push({ color, value: val, id: Math.random().toString(36).substr(2, 9) });
       }
     }
-    // 4 Regular Wilds & 4 Wild +4s
     for (let j = 0; j < 4; j++) {
       deck.push({ color: 'Wild', value: 'Wild', id: Math.random().toString(36).substr(2, 9) });
       deck.push({ color: 'Wild', value: '+4', id: Math.random().toString(36).substr(2, 9) });
@@ -132,7 +131,6 @@ io.on('connection', (socket) => {
     const room = rooms[socket.roomCode];
     if (!room || room.players.length < 2) return;
 
-    // 3-second start countdown trigger
     let count = 3;
     const startInterval = setInterval(() => {
       io.to(socket.roomCode).emit('startCountdown', count);
@@ -189,6 +187,8 @@ io.on('connection', (socket) => {
       socket.emit('invalidPlay', cardId);
       return;
     }
+
+    socket.emit('validPlay', cardId);
 
     if (played.color === 'Wild') played.color = chosenColor || 'Red';
 
