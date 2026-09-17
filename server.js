@@ -194,6 +194,7 @@ io.on('connection', (socket) => {
     room.discardPile = [];
     room.direction = 1;
     room.stackedDraw = 0;
+    room.unoCalled = {};
 
     room.players.forEach(p => {
       p.cards = room.deck.splice(0, 7);
@@ -261,6 +262,7 @@ io.on('connection', (socket) => {
     playerObj.cards.splice(idx, 1);
     addCardToPile(room, played);
 
+    // STRICT CHECK FOR 7-0 HOUSE RULE
     if (room.rules['70Rule']) {
       if (played.value === '0') {
         const lastHand = room.players[room.players.length - 1].cards;
@@ -312,7 +314,7 @@ io.on('connection', (socket) => {
         room.stackedDraw += penalty;
       } else {
         room.stackedDraw = penalty;
-        skipSteps = 1; // Handled directly during penalty draw step
+        skipSteps = 1;
       }
     }
 
@@ -328,7 +330,7 @@ io.on('connection', (socket) => {
     if (player.id !== socket.id || player.finished) return;
 
     const drawCount = room.stackedDraw > 0 ? room.stackedDraw : 1;
-    room.stackedDraw = 0; // Reset penalty stack state completely
+    room.stackedDraw = 0;
 
     for (let i = 0; i < drawCount; i++) {
       if (room.deck.length === 0) room.deck = createDeck();
@@ -336,16 +338,17 @@ io.on('connection', (socket) => {
     }
 
     socket.emit('yourHand', player.cards);
-    
-    // Explicitly advance turn to next active player after drawing penalty cards
     advanceTurn(room, 1);
   });
 
+  // DIRECT UNO CLAIM HANDLER
   socket.on('callUno', () => {
     const room = rooms[socket.roomCode];
     if (!room) return;
+    
     room.unoCalled[socket.id] = true;
     io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🚨 ${socket.username} called UNO!` });
+    socket.emit('unoAcknowledged');
   });
 
   socket.on('catchUno', (targetId) => {

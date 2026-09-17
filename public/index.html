@@ -58,7 +58,6 @@
     .timer-container { width: min(85%, 400px); background: #333; height: clamp(6px, 1.5vh, 10px); border-radius: 5px; margin: 4px auto 10px auto; overflow: hidden; }
     .timer-fill { width: 100%; height: 100%; background: #e74c3c; transition: width 1s linear; }
 
-    /* CARD GRAPHICS */
     .card {
       width: var(--card-w);
       height: var(--card-h);
@@ -101,13 +100,11 @@
     .Wild { background: linear-gradient(135deg, #e74c3c, #2980b9, #27ae60, #f1c40f); color: white; }
     .Wild .center-number { color: #111; }
 
-    /* DISCARD PILE */
     .pile-area { position: relative; width: clamp(100px, 25vw, 140px); height: clamp(100px, 25vw, 140px); margin: 6px auto; display: flex; align-items: center; justify-content: center; }
     .pile-area .card { position: absolute; }
     .direction-arrow { position: absolute; width: 100%; height: 100%; border: 3px dashed #f1c40f; border-radius: 50%; pointer-events: none; transition: transform 0.5s ease; }
     .direction-arrow.reverse { transform: rotate(-180deg); border-color: #e74c3c; }
 
-    /* FIXED HAND CONTAINER (PREVENTS CUT CARDS) */
     .hand-container {
       display: flex;
       justify-content: center;
@@ -129,7 +126,6 @@
     .modal-card { background: var(--panel-bg); padding: 16px; border-radius: 12px; width: min(90vw, 320px); max-height: 80vh; overflow-y: auto; text-align: left; }
     .lobby-item { background: #222; padding: 8px; margin: 6px 0; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
 
-    /* LOWERED CHAT CONTAINER */
     .chat-section {
       margin-top: auto;
       padding-top: 10px;
@@ -147,7 +143,6 @@
       font-size: 12px; 
     }
 
-    /* ANIMATED IN-GAME EMOTE STYLING */
     .floating-emoji {
       position: fixed;
       font-size: 45px;
@@ -192,23 +187,19 @@
     <h2>Join Room</h2>
     <input type="text" id="username" placeholder="Your Name" /><br>
     
-    <!-- EXPANDED AVATAR LIST -->
     <select id="avatarSelect">
       <option value="🤠">🤠 Cowboy</option>
       <option value="🤖">🤖 Robot</option>
       <option value="🦊">🦊 Fox</option>
       <option value="🥷">🥷 Ninja</option>
       <option value="👑">👑 Crown</option>
-
       <option value="👽">👽 Alien</option>
       <option value="🦄">🦄 Unicorn</option>
       <option value="🦁">🦁 Lion</option>
-
       <option value="🐉">🐉 Dragon</option>
       <option value="👻">👻 Ghost</option>
       <option value="🐼">🐼 Panda</option>
       <option value="🐯">🐯 Tiger</option>
-
       <option value="🧙‍♂️">🧙‍♂️ Wizard</option>
       <option value="🚀">🚀 Rocket</option>
       <option value="🔥">🔥 Fire</option>
@@ -270,7 +261,7 @@
 
     <div>
       <button onclick="drawCard()" style="background-color: #e67e22;">Draw Card</button>
-      <button onclick="callUno()" style="background-color: #e74c3c;">🚨 UNO!</button>
+      <button id="unoBtn" onclick="callUno()" style="background-color: #e74c3c;">🚨 UNO!</button>
       <button onclick="openCatchModal()" style="background-color: #fd7e14;">🎯 Catch!</button>
     </div>
 
@@ -283,7 +274,6 @@
 
     <div id="hand" class="hand-container"></div>
 
-    <!-- LOWERED CHAT BOX AREA -->
     <div class="chat-section">
       <div class="chat-box" id="chatBox"></div>
       <input type="text" id="chatInput" placeholder="Send chat..." onkeydown="if(event.key==='Enter') sendChat()"/>
@@ -327,6 +317,7 @@
     let pendingSwapCardId = null;
     let activePlayersList = [];
     let isHost = false;
+    let is70Enabled = false;
 
     function changeTheme(theme) {
       document.body.className = '';
@@ -388,10 +379,21 @@
     }
 
     function drawCard() { socket.emit('drawCard'); }
-    function callUno() { socket.emit('callUno'); }
+    
+    // INSTANT DIRECT CALL FOR UNO
+    function callUno() { 
+      socket.emit('callUno'); 
+    }
+
+    socket.on('unoAcknowledged', () => {
+      const unoBtn = document.getElementById('unoBtn');
+      unoBtn.style.backgroundColor = '#27ae60';
+      setTimeout(() => unoBtn.style.backgroundColor = '#e74c3c', 2000);
+    });
 
     function handleCardClick(cardId, color, val) {
-      if (val === 'Swap' || val === '7') {
+      // ONLY SHOW SWAP PROMPT IF 7-0 IS ACTIVE OR FOR SWAP CARDS
+      if (val === 'Swap' || (val === '7' && is70Enabled)) {
         pendingSwapCardId = cardId;
         openSwapModal(color);
       } else if (color === 'Wild') {
@@ -473,6 +475,7 @@
         document.getElementById('ruleStacking').checked = !!data.rules.allowStacking;
         document.getElementById('ruleJumpIn').checked = !!data.rules.jumpIn;
         document.getElementById('rule70').checked = !!data.rules['70Rule'];
+        is70Enabled = !!data.rules['70Rule'];
       }
 
       if (isHost) {
@@ -508,6 +511,10 @@
     socket.on('gameState', (data) => {
       document.getElementById('lobbyScreen').classList.add('hidden');
       document.getElementById('gameScreen').classList.remove('hidden');
+
+      if (data.rules) {
+        is70Enabled = !!data.rules['70Rule'];
+      }
 
       document.getElementById('currentTurn').innerText = data.currentTurn;
       document.getElementById('nextTurn').innerText = data.nextTurn;
@@ -563,19 +570,13 @@
       socket.emit('sendEmoji', emoji);
     }
 
-    /* ANIMATED FLOATING EMOTES HANDLER */
     socket.on('displayEmoji', (data) => {
       const el = document.createElement('div');
       el.className = 'floating-emoji';
       el.innerText = data.emoji;
-      
-      // Random horizontal spawn position
       el.style.left = (Math.random() * 60 + 20) + 'vw';
       el.style.top = '65vh';
-      
       document.body.appendChild(el);
-      
-      // Automatically removes node after CSS animation completes
       setTimeout(() => el.remove(), 2000);
     });
 
