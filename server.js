@@ -85,6 +85,8 @@ function getActivePlayers(room) {
 
 function advanceTurn(room, steps = 1) {
   const total = room.players.length;
+  if (total === 0) return;
+
   for (let i = 0; i < steps; i++) {
     do {
       room.currentTurnIndex = (room.currentTurnIndex + room.direction + total) % total;
@@ -310,7 +312,7 @@ io.on('connection', (socket) => {
         room.stackedDraw += penalty;
       } else {
         room.stackedDraw = penalty;
-        skipSteps = 2;
+        skipSteps = 1; // Handled directly during penalty draw step
       }
     }
 
@@ -326,7 +328,7 @@ io.on('connection', (socket) => {
     if (player.id !== socket.id || player.finished) return;
 
     const drawCount = room.stackedDraw > 0 ? room.stackedDraw : 1;
-    room.stackedDraw = 0;
+    room.stackedDraw = 0; // Reset penalty stack state completely
 
     for (let i = 0; i < drawCount; i++) {
       if (room.deck.length === 0) room.deck = createDeck();
@@ -334,6 +336,8 @@ io.on('connection', (socket) => {
     }
 
     socket.emit('yourHand', player.cards);
+    
+    // Explicitly advance turn to next active player after drawing penalty cards
     advanceTurn(room, 1);
   });
 

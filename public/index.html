@@ -28,7 +28,6 @@
       flex-direction: column;
     }
 
-    /* HEADER & ACCESSIBLE THEME SELECTOR */
     header {
       display: flex;
       justify-content: space-between;
@@ -59,7 +58,7 @@
     .timer-container { width: min(85%, 400px); background: #333; height: clamp(6px, 1.5vh, 10px); border-radius: 5px; margin: 4px auto 10px auto; overflow: hidden; }
     .timer-fill { width: 100%; height: 100%; background: #e74c3c; transition: width 1s linear; }
 
-    /* RESPONSIVE CARDS */
+    /* CARD GRAPHICS */
     .card {
       width: var(--card-w);
       height: var(--card-h);
@@ -101,19 +100,18 @@
     .Wild { background: linear-gradient(135deg, #e74c3c, #2980b9, #27ae60, #f1c40f); color: white; }
     .Wild .center-number { color: #111; }
 
-    /* DISCARD PILE & ROTATION */
+    /* DISCARD PILE */
     .pile-area { position: relative; width: clamp(100px, 25vw, 140px); height: clamp(100px, 25vw, 140px); margin: 6px auto; display: flex; align-items: center; justify-content: center; }
     .pile-area .card { position: absolute; }
     .direction-arrow { position: absolute; width: 100%; height: 100%; border: 3px dashed #f1c40f; border-radius: 50%; pointer-events: none; transition: transform 0.5s ease; }
     .direction-arrow.reverse { transform: rotate(-180deg); border-color: #e74c3c; }
 
-    /* FLEXIBLE CARD HAND CONTAINER */
     .hand-container {
       display: flex;
       justify-content: center;
       align-items: flex-end;
-      margin: 15px auto 5px auto;
-      min-height: calc(var(--card-h) + 20px);
+      margin: 10px auto 5px auto;
+      min-height: calc(var(--card-h) + 15px);
       width: 100%;
       max-width: 100vw;
       padding: 0 10px;
@@ -121,18 +119,30 @@
       overflow-x: auto;
     }
 
-    /* HOST BADGES & WAITING SCREEN */
     .host-badge { background: #f39c12; color: #111; font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 4px; margin-left: 5px; }
     .waiting-msg { font-style: italic; color: #f1c40f; font-size: 14px; margin-top: 8px; }
 
-    /* MODALS */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 300; }
     .modal-card { background: var(--panel-bg); padding: 16px; border-radius: 12px; width: min(90vw, 320px); max-height: 80vh; overflow-y: auto; text-align: left; }
-    
     .lobby-item { background: #222; padding: 8px; margin: 6px 0; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
 
-    /* CHAT */
-    .chat-box { background: rgba(0,0,0,0.5); width: min(90%, 400px); height: 80px; overflow-y: auto; margin: 8px auto; border-radius: 6px; padding: 6px; text-align: left; font-size: 12px; }
+    /* LOWERED CHAT CONTAINER */
+    .chat-section {
+      margin-top: auto;
+      padding-top: 15px;
+      padding-bottom: 5px;
+    }
+    .chat-box { 
+      background: rgba(0,0,0,0.6); 
+      width: min(90%, 400px); 
+      height: 70px; 
+      overflow-y: auto; 
+      margin: 0 auto 6px auto; 
+      border-radius: 6px; 
+      padding: 6px; 
+      text-align: left; 
+      font-size: 12px; 
+    }
   </style>
 </head>
 <body>
@@ -186,7 +196,6 @@
     <h3>Players:</h3>
     <ul id="playerList" style="list-style:none; padding:0;"></ul>
 
-    <!-- HOST / WAITING STATE CONTROLS -->
     <div id="hostControls">
       <button id="startBtn" onclick="requestStart()" style="background-color: #007bff;">Start Game</button>
     </div>
@@ -196,7 +205,7 @@
   </div>
 
   <!-- GAME SCREEN -->
-  <div id="gameScreen" class="hidden">
+  <div id="gameScreen" class="hidden" style="display: flex; flex-direction: column; flex-grow: 1;">
     <div class="turn-bar">
       Current: <span id="currentTurn" style="color:#2ecc71;">--</span><br>
       <small style="color:#aaa;">Next up: <span id="nextTurn">--</span></small>
@@ -226,8 +235,11 @@
 
     <div id="hand" class="hand-container"></div>
 
-    <div class="chat-box" id="chatBox"></div>
-    <input type="text" id="chatInput" placeholder="Send chat..." onkeydown="if(event.key==='Enter') sendChat()"/>
+    <!-- LOWERED CHAT BOX AREA -->
+    <div class="chat-section">
+      <div class="chat-box" id="chatBox"></div>
+      <input type="text" id="chatInput" placeholder="Send chat..." onkeydown="if(event.key==='Enter') sendChat()"/>
+    </div>
   </div>
 
   <!-- COLOR PICKER MODAL -->
@@ -397,29 +409,24 @@
 
     socket.on('errorMsg', (msg) => { alert(msg); location.reload(); });
 
-    // LOBBY STATE & HOST PERMISSION HANDLING
     socket.on('updateLobby', (data) => {
       activePlayersList = data.players;
       isHost = (data.hostId === socket.id);
 
-      // Render player list with Host badge
       document.getElementById('playerList').innerHTML = data.players.map(p => `
         <li>${p.avatar} ${p.name} ${p.id === data.hostId ? '<span class="host-badge">HOST</span>' : ''}</li>
       `).join('');
 
-      // Lock/Unlock checkboxes for host only
       document.getElementById('ruleStacking').disabled = !isHost;
       document.getElementById('ruleJumpIn').disabled = !isHost;
       document.getElementById('rule70').disabled = !isHost;
 
-      // Sync checkbox state from room object
       if (data.rules) {
         document.getElementById('ruleStacking').checked = !!data.rules.allowStacking;
         document.getElementById('ruleJumpIn').checked = !!data.rules.jumpIn;
         document.getElementById('rule70').checked = !!data.rules['70Rule'];
       }
 
-      // Show Host controls or Guest waiting state
       if (isHost) {
         document.getElementById('hostControls').classList.remove('hidden');
         document.getElementById('guestWaitingMsg').classList.add('hidden');
