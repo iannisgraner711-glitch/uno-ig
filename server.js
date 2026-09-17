@@ -134,7 +134,7 @@ io.on('connection', (socket) => {
       rooms[roomCode] = { 
         players: [], gameStarted: false, deck: [], discardPile: [], 
         currentTurnIndex: 0, leaderboard: [], direction: 1, timer: null, timeLeft: 10, roomCode,
-        stackedDraw: 0, rules: { allowStacking: true, jumpIn: true, 70Rule: true }, unoCalled: {}
+       stackedDraw: 0, rules: { allowStacking: true, jumpIn: true, '70Rule': true }, unoCalled: {}
       };
     }
 
