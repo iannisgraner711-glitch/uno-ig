@@ -7,13 +7,14 @@
     body { font-family: Arial, sans-serif; text-align: center; background: #121212; color: #fff; margin: 0; padding: 10px; overflow-x: hidden; }
     input, button { padding: 12px; margin: 6px; font-size: 16px; border-radius: 8px; border: none; }
     button { background-color: #28a745; color: white; font-weight: bold; cursor: pointer; }
+
     .hidden { display: none !important; }
-    /* TURN INFORMATION & TIMER */
+
     .turn-bar { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
     .timer-container { width: 80%; background: #333; height: 10px; border-radius: 5px; margin: 5px auto 15px auto; overflow: hidden; }
     .timer-fill { width: 100%; height: 100%; background: #e74c3c; transition: width 1s linear; }
 
-    /* CARD DESIGN */
+    /* CARD GRAPHICS */
     .card {
       width: 75px;
       height: 110px;
@@ -25,9 +26,9 @@
       display: inline-block;
       user-select: none;
       box-sizing: border-box;
-      transition: transform 0.3s ease, top 0.3s ease, left 0.3s ease;
+      transition: transform 0.25s ease, top 0.25s ease;
     }
-    .card .corner { position: absolute; top: 4px; left: 5px; font-size: 12px; font-weight: bold; }
+    .card .corner { position: absolute; top: 4px; left: 5px; font-size: 11px; font-weight: bold; }
     .card .center-oval {
       width: 50px;
       height: 72px;
@@ -41,7 +42,7 @@
       align-items: center;
       justify-content: center;
     }
-    .card .center-number { font-size: 22px; font-weight: 900; }
+    .card .center-number { font-size: 20px; font-weight: 900; }
 
     /* CARD COLORS */
     .Red { background-color: #e74c3c; color: white; }
@@ -59,41 +60,42 @@
     .Wild { background: linear-gradient(135deg, #e74c3c, #2980b9, #27ae60, #f1c40f); color: white; }
     .Wild .center-number { color: #111; }
 
-    /* UNCENTERED MESSY DISCARD PILE */
-    .pile-area {
-      position: relative;
-      width: 120px;
-      height: 130px;
-      margin: 10px auto;
-    }
-    .pile-area .card {
-      position: absolute;
-      top: 0;
-      left: 20px;
-    }
+    /* DISCARD PILE */
+    .pile-area { position: relative; width: 120px; height: 130px; margin: 10px auto; }
+    .pile-area .card { position: absolute; top: 0; left: 20px; }
 
-    /* OVERLAPPING HAND WITH ANIMATION */
+    /* CURVED FAN HAND */
     .hand-container {
       display: flex;
       justify-content: center;
-      margin-top: 15px;
-      padding-left: 35px;
-      overflow-x: auto;
-      padding-bottom: 20px;
+      align-items: flex-end;
+      margin-top: 30px;
+      height: 150px;
+      padding-bottom: 10px;
     }
     .hand-container .card {
-      margin-left: -40px;
-    }
-    .hand-container .card:active {
-      transform: translateY(-25px) scale(1.05) !important;
-      z-index: 200 !important;
+      margin-left: -38px;
+      transform-origin: bottom center;
     }
 
-    /* ANIMATION FLY TO PILE */
+    /* SHAKE ANIMATION FOR INVALID TAPS */
+    .shake {
+      animation: shakeAnim 0.35s ease-in-out;
+      border-color: #ff3333 !important;
+    }
+    @keyframes shakeAnim {
+      0% { transform: translateX(0); }
+      20% { transform: translateX(-8px) rotate(-5deg); }
+      40% { transform: translateX(8px) rotate(5deg); }
+      60% { transform: translateX(-5px); }
+      80% { transform: translateX(5px); }
+      100% { transform: translateX(0); }
+    }
+
     .fly-card {
       position: fixed !important;
       z-index: 1000 !important;
-      transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1) !important;
+      transition: all 0.38s cubic-bezier(0.25, 1, 0.5, 1) !important;
       pointer-events: none;
     }
 
@@ -114,9 +116,10 @@
 
   <div id="lobbyScreen" class="hidden">
     <h2 id="roomTitle"></h2>
-    <h3>Players in Lobby (Max 12):</h3>
+    <h3 id="countdownDisplay" style="color:#f1c40f;"></h3>
+    <h3>Players in Lobby:</h3>
     <ul id="playerList" style="list-style:none; padding:0;"></ul>
-    <button onclick="startGame()" style="background-color: #007bff;">Start Game</button>
+    <button id="startBtn" onclick="requestStart()" style="background-color: #007bff;">Start Game</button>
   </div>
 
   <div id="gameScreen" class="hidden">
@@ -143,7 +146,7 @@
     <div id="hand" class="hand-container"></div>
   </div>
 
- <div id="colorModal" class="color-picker hidden">
+  <div id="colorModal" class="color-picker hidden">
     <div class="color-box">
       <button class="Red" onclick="selectWildColor('Red')">Red</button>
       <button class="Blue" onclick="selectWildColor('Blue')">Blue</button>
@@ -168,7 +171,7 @@
       }
     }
 
-    function startGame() { socket.emit('startGame'); }
+    function requestStart() { socket.emit('requestStartGame'); }
     function drawCard() { socket.emit('drawCard'); }
 
     function handleCardClick(cardId, color, element) {
@@ -211,8 +214,21 @@
       setTimeout(() => {
         clone.remove();
         callback();
-      }, 380);
+      }, 350);
     }
+
+    socket.on('invalidPlay', (cardId) => {
+      const cardElem = document.getElementById(`card-${cardId}`);
+      if (cardElem) {
+        cardElem.classList.add('shake');
+        setTimeout(() => cardElem.classList.remove('shake'), 400);
+      }
+    });
+
+    socket.on('startCountdown', (sec) => {
+      document.getElementById('countdownDisplay').innerText = `Game starting in ${sec}...`;
+      document.getElementById('startBtn').classList.add('hidden');
+    });
 
     socket.on('errorMsg', (msg) => { alert(msg); location.reload(); });
 
@@ -221,15 +237,21 @@
     });
 
     socket.on('timerUpdate', (secondsLeft) => {
-      const fill = document.getElementById('timerFill');
-      fill.style.width = (secondsLeft * 10) + '%';
+      document.getElementById('timerFill').style.width = (secondsLeft * 10) + '%';
     });
 
-    function createCardMarkup(c, zIndex = 0, styleStr = '', onClickAttr = '') {
+    function getCardGraphic(val) {
+      if (val === 'Reverse') return '⇄';
+      if (val === 'Skip') return '⊘';
+      return val;
+    }
+
+    function createCardMarkup(c, zIndex = 0, styleStr = '', onClickAttr = '', cardId = '') {
+      const symbol = getCardGraphic(c.value);
       return `
-        <div class="card ${c.color}" style="z-index:${zIndex}; ${styleStr}" ${onClickAttr}>
-          <div class="corner">${c.value}</div>
-          <div class="center-oval"><span class="center-number">${c.value}</span></div>
+        <div id="card-${cardId}" class="card ${c.color}" style="z-index:${zIndex}; ${styleStr}" ${onClickAttr}>
+          <div class="corner">${symbol}</div>
+          <div class="center-oval"><span class="center-number">${symbol}</span></div>
         </div>
       `;
     }
@@ -255,9 +277,16 @@
 
     socket.on('yourHand', (cards) => {
       const handDiv = document.getElementById('hand');
+      const total = cards.length;
+      
       handDiv.innerHTML = cards.map((c, idx) => {
+        // Compute curved fan position
+        const angle = (idx - (total - 1) / 2) * 6; 
+        const yOffset = Math.abs(angle) * 0.8;
+        const styleStr = `transform: rotate(${angle}deg) translateY(${yOffset}px);`;
         const clickCode = `onclick="handleCardClick('${c.id}', '${c.color}', this)"`;
-        return createCardMarkup(c, idx, '', clickCode);
+        
+        return createCardMarkup(c, idx, styleStr, clickCode, c.id);
       }).join('');
     });
 

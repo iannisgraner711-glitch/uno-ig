@@ -23,7 +23,9 @@ function createDeck() {
         deck.push({ color, value: val, id: Math.random().toString(36).substr(2, 9) });
       }
     }
+    // 4 Regular Wilds & 4 Wild +4s
     for (let j = 0; j < 4; j++) {
+      deck.push({ color: 'Wild', value: 'Wild', id: Math.random().toString(36).substr(2, 9) });
       deck.push({ color: 'Wild', value: '+4', id: Math.random().toString(36).substr(2, 9) });
     }
   }
@@ -76,7 +78,6 @@ function advanceTurn(room, steps = 1) {
     } while (room.players[room.currentTurnIndex].finished);
   }
 
-  const active = getActivePlayers(room);
   const nextIdx = (room.currentTurnIndex + room.direction + total) % total;
   let nextPlayer = room.players[nextIdx];
 
@@ -116,8 +117,8 @@ io.on('connection', (socket) => {
     }
 
     const room = rooms[roomCode];
-    if (room.players.length >= 12) return socket.emit('errorMsg', 'Room is full! Max 12.');
-    if (room.gameStarted) return socket.emit('errorMsg', 'Game already started.');
+    if (room.players.length >= 12) return socket.emit('errorMsg', 'Room full (12 max).');
+    if (room.gameStarted) return socket.emit('errorMsg', 'Game in progress.');
 
     socket.join(roomCode);
     socket.roomCode = roomCode;
@@ -127,10 +128,23 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('updateLobby', room.players);
   });
 
-  socket.on('startGame', () => {
+  socket.on('requestStartGame', () => {
     const room = rooms[socket.roomCode];
     if (!room || room.players.length < 2) return;
 
+    // 3-second start countdown trigger
+    let count = 3;
+    const startInterval = setInterval(() => {
+      io.to(socket.roomCode).emit('startCountdown', count);
+      count--;
+      if (count < 0) {
+        clearInterval(startInterval);
+        executeGameStart(room);
+      }
+    }, 1000);
+  });
+
+  function executeGameStart(room) {
     room.gameStarted = true;
     room.deck = createDeck();
     room.leaderboard = [];
@@ -152,7 +166,7 @@ io.on('connection', (socket) => {
 
     room.currentTurnIndex = 0;
     advanceTurn(room, 0);
-  });
+  }
 
   socket.on('playCard', ({ cardId, chosenColor }) => {
     const room = rooms[socket.roomCode];
@@ -171,7 +185,10 @@ io.on('connection', (socket) => {
                     played.color === top.color || 
                     played.value === top.value;
 
-    if (!isMatch) return;
+    if (!isMatch) {
+      socket.emit('invalidPlay', cardId);
+      return;
+    }
 
     if (played.color === 'Wild') played.color = chosenColor || 'Red';
 
