@@ -12,16 +12,17 @@ app.get('/', (req, res) => {
 
 const rooms = {};
 
-// Helper: Build a standard 4-color numbered deck
 function createDeck() {
   const colors = ['Red', 'Blue', 'Green', 'Yellow'];
   const deck = [];
-  for (let color of colors) {
-    for (let num = 0; num <= 9; num++) {
-      deck.push({ color, value: num, id: Math.random().toString(36).substr(2, 9) });
+  // Build extra cards so 12 players don't run out easily
+  for (let i = 0; i < 2; i++) {
+    for (let color of colors) {
+      for (let num = 0; num <= 9; num++) {
+        deck.push({ color, value: num, id: Math.random().toString(36).substr(2, 9) });
+      }
     }
   }
-  // Shuffle deck
   return deck.sort(() => Math.random() - 0.5);
 }
 
@@ -34,14 +35,16 @@ io.on('connection', (socket) => {
         gameStarted: false, 
         deck: [], 
         topCard: null, 
-        currentTurnIndex: 0 
+        currentTurnIndex: 0,
+        leaderboard: []
       };
     }
 
     const room = rooms[roomCode];
 
-    if (room.players.length >= 8) {
-      socket.emit('errorMsg', 'Room is full! Max 8 players.');
+    // Increased max players to 12
+    if (room.players.length >= 12) {
+      socket.emit('errorMsg', 'Room is full! Max 12 players.');
       return;
     }
     if (room.gameStarted) {
@@ -53,92 +56,101 @@ io.on('connection', (socket) => {
     socket.roomCode = roomCode;
     socket.username = username;
     
-    room.players.push({ id: socket.id, name: username, cards: [] });
+    room.players.push({ id: socket.id, name: username, cards: [], finished: false });
     io.to(roomCode).emit('updateLobby', room.players);
   });
 
-  // Start the Game: Deal cards and set top card
   socket.on('startGame', () => {
     const room = rooms[socket.roomCode];
     if (!room || room.players.length < 2) return;
 
     room.gameStarted = true;
     room.deck = createDeck();
+    room.leaderboard = [];
 
-    // Deal 7 cards to each player
     room.players.forEach(player => {
       player.cards = room.deck.splice(0, 7);
+      player.finished = false;
       io.to(player.id).emit('yourHand', player.cards);
     });
 
-    // Set initial discard pile card
     room.topCard = room.deck.pop();
     room.currentTurnIndex = 0;
 
     io.to(socket.roomCode).emit('gameState', {
       topCard: room.topCard,
-      currentTurn: room.players[room.currentTurnIndex].name
+      currentTurn: room.players[room.currentTurnIndex].name,
+      leaderboard: room.leaderboard
     });
   });
 
-  // Play a card logic
   socket.on('playCard', (cardId) => {
     const room = rooms[socket.roomCode];
     if (!room || !room.gameStarted) return;
 
     const currentPlayer = room.players[room.currentTurnIndex];
-    if (currentPlayer.id !== socket.id) return; // Not your turn!
+    if (currentPlayer.id !== socket.id || currentPlayer.finished) return;
 
     const cardIndex = currentPlayer.cards.findIndex(c => c.id === cardId);
     if (cardIndex === -1) return;
 
     const playedCard = currentPlayer.cards[cardIndex];
 
-    // UNO Rule: Must match color OR value
     if (playedCard.color === room.topCard.color || playedCard.value === room.topCard.value) {
       currentPlayer.cards.splice(cardIndex, 1);
       room.topCard = playedCard;
 
-      // Check for win condition
+      // Check if player emptied their hand
       if (currentPlayer.cards.length === 0) {
-        io.to(socket.roomCode).emit('gameOver', currentPlayer.name);
+        currentPlayer.finished = true;
+        room.leaderboard.push(currentPlayer.name);
+      }
+
+      // Check remaining active players
+      const activePlayers = room.players.filter(p => !p.finished);
+
+      if (activePlayers.length <= 1) {
+        if (activePlayers.length === 1) room.leaderboard.push(activePlayers[0].name);
+        io.to(socket.roomCode).emit('gameOver', room.leaderboard);
         return;
       }
 
-      // Move turn to next player
-      room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+      // Advance turn to next active player
+      do {
+        room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+      } while (room.players[room.currentTurnIndex].finished);
 
-      // Send updated hand back to player who played
       socket.emit('yourHand', currentPlayer.cards);
 
-      // Broadcast new state to everyone in room
       io.to(socket.roomCode).emit('gameState', {
         topCard: room.topCard,
-        currentTurn: room.players[room.currentTurnIndex].name
+        currentTurn: room.players[room.currentTurnIndex].name,
+        leaderboard: room.leaderboard
       });
     }
   });
 
-  // Draw card logic
   socket.on('drawCard', () => {
     const room = rooms[socket.roomCode];
     if (!room || !room.gameStarted) return;
 
     const currentPlayer = room.players[room.currentTurnIndex];
-    if (currentPlayer.id !== socket.id) return;
+    if (currentPlayer.id !== socket.id || currentPlayer.finished) return;
 
     if (room.deck.length === 0) room.deck = createDeck();
 
     const drawnCard = room.deck.pop();
     currentPlayer.cards.push(drawnCard);
 
-    // Pass turn to next player
-    room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+    do {
+      room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+    } while (room.players[room.currentTurnIndex].finished);
 
     socket.emit('yourHand', currentPlayer.cards);
     io.to(socket.roomCode).emit('gameState', {
       topCard: room.topCard,
-      currentTurn: room.players[room.currentTurnIndex].name
+      currentTurn: room.players[room.currentTurnIndex].name,
+      leaderboard: room.leaderboard
     });
   });
 
