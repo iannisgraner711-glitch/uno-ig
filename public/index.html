@@ -4,10 +4,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Private Card Game</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; background: #222; color: #fff; padding: 20px; }
-    input, button { padding: 12px; margin: 10px; font-size: 16px; border-radius: 8px; border: none; }
-    button { background-color: #28a745; color: white; cursor: pointer; }
+    body { font-family: Arial, sans-serif; text-align: center; background: #1a1a1a; color: #fff; margin: 0; padding: 15px; }
+    input, button { padding: 12px; margin: 8px; font-size: 16px; border-radius: 8px; border: none; }
+    button { background-color: #28a745; color: white; font-weight: bold; cursor: pointer; }
     .hidden { display: none; }
+    .card-pile { display: inline-block; padding: 20px 30px; border-radius: 10px; font-size: 24px; font-weight: bold; margin: 15px 0; border: 2px solid #fff; }
+    .hand-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 15px; }
+    .card-btn { padding: 15px 20px; font-size: 18px; border-radius: 8px; font-weight: bold; border: 2px solid white; color: white; }
+    .Red { background-color: #e74c3c; }
+    .Blue { background-color: #3498db; }
+    .Green { background-color: #2ecc71; }
+    .Yellow { background-color: #f1c40f; color: black; }
   </style>
 </head>
 <body>
@@ -20,11 +27,26 @@
     <button onclick="join()">Join Lobby</button>
   </div>
 
-  <!-- LOBBY & GAME SCREEN -->
-  <div id="gameScreen" class="hidden">
+  <!-- LOBBY SCREEN -->
+  <div id="lobbyScreen" class="hidden">
     <h2 id="roomTitle"></h2>
-    <h3>Players in Lobby (Max 8):</h3>
+    <h3>Players in Lobby:</h3>
     <ul id="playerList" style="list-style:none; padding:0;"></ul>
+    <button onclick="startGame()" style="background-color: #007bff;">Start Game</button>
+  </div>
+
+  <!-- ACTIVE GAME SCREEN -->
+  <div id="gameScreen" class="hidden">
+    <h2 id="turnDisplay">Waiting...</h2>
+    <div>
+      <p>Top Card on Pile:</p>
+      <div id="topCard" class="card-pile">--</div>
+    </div>
+    
+    <button onclick="drawCard()" style="background-color: #e67e22;">Draw Card</button>
+
+    <h3>Your Hand:</h3>
+    <div id="hand" class="hand-container"></div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -38,19 +60,50 @@
       if (username && roomCode) {
         socket.emit('joinRoom', { username, roomCode });
         document.getElementById('loginScreen').classList.add('hidden');
-        document.getElementById('gameScreen').classList.remove('hidden');
+        document.getElementById('lobbyScreen').classList.remove('hidden');
         document.getElementById('roomTitle').innerText = "Room Code: " + roomCode;
       }
     }
 
-    socket.on('errorMsg', (msg) => {
-      alert(msg);
-      location.reload();
-    });
+    function startGame() {
+      socket.emit('startGame');
+    }
+
+    function playCard(cardId) {
+      socket.emit('playCard', cardId);
+    }
+
+    function drawCard() {
+      socket.emit('drawCard');
+    }
+
+    socket.on('errorMsg', (msg) => { alert(msg); location.reload(); });
 
     socket.on('updateLobby', (players) => {
       const list = document.getElementById('playerList');
       list.innerHTML = players.map(p => `<li>🎮 ${p.name}</li>`).join('');
+    });
+
+    socket.on('gameState', (data) => {
+      document.getElementById('lobbyScreen').classList.add('hidden');
+      document.getElementById('gameScreen').classList.remove('hidden');
+
+      document.getElementById('turnDisplay').innerText = "Current Turn: " + data.currentTurn;
+      const topCardDiv = document.getElementById('topCard');
+      topCardDiv.innerText = `${data.topCard.color} ${data.topCard.value}`;
+      topCardDiv.className = `card-pile ${data.topCard.color}`;
+    });
+
+    socket.on('yourHand', (cards) => {
+      const handDiv = document.getElementById('hand');
+      handDiv.innerHTML = cards.map(c => 
+        `<button class="card-btn ${c.color}" onclick="playCard('${c.id}')">${c.color} ${c.value}</button>`
+      ).join('');
+    });
+
+    socket.on('gameOver', (winnerName) => {
+      alert(`🎉 ${winnerName} won the game!`);
+      location.reload();
     });
   </script>
 </body>
