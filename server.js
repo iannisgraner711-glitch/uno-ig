@@ -47,7 +47,7 @@ function startTurnTimer(roomCode) {
   if (!room) return;
 
   if (room.timer) clearInterval(room.timer);
-  room.timeLeft = 10;
+  room.timeLeft = 30;
 
   io.to(roomCode).emit('timerUpdate', room.timeLeft);
 

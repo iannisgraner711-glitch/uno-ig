@@ -440,26 +440,44 @@
       document.getElementById('playerList').innerHTML = players.map(p => `<li>${p.avatar} ${p.name}</li>`).join('');
     });
 
-    socket.on('timerUpdate', (secondsLeft) => {
-      document.getElementById('timerFill').style.width = (secondsLeft * 10) + '%';
-    });
+   // 1. Update Timer Bar for 30 Seconds
+socket.on('timerUpdate', (secondsLeft) => {
+  // Calculates percentage based on 30 seconds max
+  const percentage = (secondsLeft / 30) * 100;
+  document.getElementById('timerFill').style.width = percentage + '%';
+});
 
-    function getCardGraphic(val) {
-      if (val === 'Reverse') return '⇄';
-      if (val === 'Skip') return '⊘';
-      if (val === 'Swap') return '🔄';
-      return val;
-    }
+// 2. Responsive Card Hand Scaling
+socket.on('yourHand', (cards) => {
+  const handDiv = document.getElementById('hand');
+  const total = cards.length;
 
-    function createCardMarkup(c, zIndex = 0, styleStr = '', onClickAttr = '', cardId = '') {
-      const symbol = getCardGraphic(c.value);
-      return `
-        <div id="card-${cardId}" class="card ${c.color}" style="z-index:${zIndex}; ${styleStr}" ${onClickAttr}>
-          <div class="corner">${symbol}</div>
-          <div class="center-oval"><span class="center-number">${symbol}</span></div>
-        </div>
-      `;
-    }
+  // Calculate dynamic dimensions based on card count
+  // Scale cards down if hand contains more than 7 cards
+  const scale = total > 7 ? Math.max(0.55, 1 - (total - 7) * 0.045) : 1;
+  const cardWidth = 75 * scale;
+  
+  // Dynamically pull cards closer together as hand size grows
+  const overlap = total > 1 ? Math.min(cardWidth * 0.7, (280 / total) + (15 * scale)) : 0;
+  const angleStep = Math.min(6, 45 / (total || 1));
+
+  handDiv.innerHTML = cards.map((c, idx) => {
+    const angle = (idx - (total - 1) / 2) * angleStep;
+    const yOffset = Math.abs(angle) * 0.6;
+
+    // Apply inline scale, overlap margin, and transform angle
+    const styleStr = `
+      width: ${cardWidth}px;
+      height: ${110 * scale}px;
+      margin-left: ${idx === 0 ? 0 : -overlap}px;
+      font-size: ${16 * scale}px;
+      transform: rotate(${angle}deg) translateY(${yOffset}px);
+    `;
+    
+    const clickCode = `onclick="handleCardClick('${c.id}', '${c.color}', '${c.value}')"`;
+    return createCardMarkup(c, idx, styleStr, clickCode, c.id);
+  }).join('');
+});
 
     socket.on('gameState', (data) => {
       document.getElementById('lobbyScreen').classList.add('hidden');
