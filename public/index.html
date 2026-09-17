@@ -71,8 +71,9 @@
       user-select: none;
       flex-shrink: 0;
       transition: transform 0.2s ease;
+      transform-origin: bottom center;
     }
-    .card:hover { transform: translateY(-12px) scale(1.08) !important; z-index: 100 !important; }
+    .card:hover { transform: translateY(-20px) scale(1.15) !important; z-index: 100 !important; }
     .card .corner { position: absolute; top: 2px; left: 4px; font-size: clamp(9px, 2vw, 12px); font-weight: bold; }
     .card .center-oval {
       width: 65%;
@@ -106,17 +107,19 @@
     .direction-arrow { position: absolute; width: 100%; height: 100%; border: 3px dashed #f1c40f; border-radius: 50%; pointer-events: none; transition: transform 0.5s ease; }
     .direction-arrow.reverse { transform: rotate(-180deg); border-color: #e74c3c; }
 
+    /* FIXED HAND CONTAINER (PREVENTS CUT CARDS) */
     .hand-container {
       display: flex;
       justify-content: center;
       align-items: flex-end;
-      margin: 10px auto 5px auto;
-      min-height: calc(var(--card-h) + 15px);
+      margin: 15px auto 10px auto;
+      min-height: calc(var(--card-h) + 35px);
       width: 100%;
       max-width: 100vw;
-      padding: 0 10px;
+      padding: 25px 15px 15px 15px;
       box-sizing: border-box;
       overflow-x: auto;
+      overflow-y: visible;
     }
 
     .host-badge { background: #f39c12; color: #111; font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 4px; margin-left: 5px; }
@@ -129,7 +132,7 @@
     /* LOWERED CHAT CONTAINER */
     .chat-section {
       margin-top: auto;
-      padding-top: 15px;
+      padding-top: 10px;
       padding-bottom: 5px;
     }
     .chat-box { 
@@ -142,6 +145,34 @@
       padding: 6px; 
       text-align: left; 
       font-size: 12px; 
+    }
+
+    /* ANIMATED IN-GAME EMOTE STYLING */
+    .floating-emoji {
+      position: fixed;
+      font-size: 45px;
+      z-index: 999;
+      pointer-events: none;
+      animation: floatUp 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+
+    @keyframes floatUp {
+      0% {
+        opacity: 0;
+        transform: translateY(0) scale(0.5) rotate(0deg);
+      }
+      20% {
+        opacity: 1;
+        transform: translateY(-30px) scale(1.2) rotate(-10deg);
+      }
+      80% {
+        opacity: 1;
+        transform: translateY(-120px) scale(1) rotate(10deg);
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(-180px) scale(0.8) rotate(0deg);
+      }
     }
   </style>
 </head>
@@ -160,13 +191,30 @@
   <div id="loginScreen">
     <h2>Join Room</h2>
     <input type="text" id="username" placeholder="Your Name" /><br>
+    
+    <!-- EXPANDED AVATAR LIST -->
     <select id="avatarSelect">
       <option value="🤠">🤠 Cowboy</option>
       <option value="🤖">🤖 Robot</option>
       <option value="🦊">🦊 Fox</option>
       <option value="🥷">🥷 Ninja</option>
       <option value="👑">👑 Crown</option>
+
+      <option value="👽">👽 Alien</option>
+      <option value="🦄">🦄 Unicorn</option>
+      <option value="🦁">🦁 Lion</option>
+
+      <option value="🐉">🐉 Dragon</option>
+      <option value="👻">👻 Ghost</option>
+      <option value="🐼">🐼 Panda</option>
+      <option value="🐯">🐯 Tiger</option>
+
+      <option value="🧙‍♂️">🧙‍♂️ Wizard</option>
+      <option value="🚀">🚀 Rocket</option>
+      <option value="🔥">🔥 Fire</option>
+      <option value="😎">😎 Cool</option>
     </select><br>
+
     <input type="text" id="roomCode" placeholder="Room Code" /><br>
     <button onclick="joinDirect()">Join / Create</button><br>
     <button onclick="openLobbyBrowser()" style="background-color: #17a2b8;">🌐 Browse Lobbies</button>
@@ -484,11 +532,11 @@
       const total = cards.length;
 
       const overlapMargin = total > 5 ? Math.max(-45, -15 - (total * 2)) : -28;
-      const maxRotate = Math.min(25, total * 2.5);
+      const maxRotate = Math.min(20, total * 2);
 
       handDiv.innerHTML = cards.map((c, idx) => {
         const angle = total > 1 ? ((idx - (total - 1) / 2) / ((total - 1) / 2)) * maxRotate : 0;
-        const yOffset = Math.abs(angle) * 0.4;
+        const yOffset = Math.abs(angle) * 0.3;
 
         const styleStr = `margin-left: ${idx === 0 ? 0 : overlapMargin}px; transform: rotate(${angle}deg) translateY(${yOffset}px);`;
         const clickCode = `onclick="handleCardClick('${c.id}', '${c.color}', '${c.value}')"`;
@@ -515,16 +563,19 @@
       socket.emit('sendEmoji', emoji);
     }
 
+    /* ANIMATED FLOATING EMOTES HANDLER */
     socket.on('displayEmoji', (data) => {
       const el = document.createElement('div');
       el.className = 'floating-emoji';
       el.innerText = data.emoji;
-      el.style.position = 'fixed';
-      el.style.fontSize = '36px';
+      
+      // Random horizontal spawn position
       el.style.left = (Math.random() * 60 + 20) + 'vw';
-      el.style.top = '60vh';
-      el.style.zIndex = '999';
+      el.style.top = '65vh';
+      
       document.body.appendChild(el);
+      
+      // Automatically removes node after CSS animation completes
       setTimeout(() => el.remove(), 2000);
     });
 
