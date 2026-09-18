@@ -240,7 +240,15 @@ io.on('connection', (socket) => {
     advanceTurn(room, 0);
   }
 
-  // MULTI-CARD STACK PLAYING MECHANIC
+  socket.on('callUno', () => {
+    const room = rooms[socket.roomCode];
+    if (!room) return;
+    
+    room.unoCalled[socket.sessionId] = true;
+    io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🚨 ${socket.username} called UNO!` });
+    socket.emit('unoAcknowledged');
+  });
+
   socket.on('playCards', ({ cardIds, chosenColor }) => {
     const room = rooms[socket.roomCode];
     if (!room || !room.gameStarted) return;
@@ -257,7 +265,6 @@ io.on('connection', (socket) => {
 
     if (playedCards.length !== cardIds.length) return;
 
-    // VALIDATE MULTI-CARD STACK: ALL CARDS MUST SHARE THE SAME VALUE/NUMBER
     const targetValue = playedCards[0].value;
     const allSameValue = playedCards.every(c => c.value === targetValue);
     if (!allSameValue) return;
@@ -275,22 +282,33 @@ io.on('connection', (socket) => {
 
     if (!isMatch) return;
 
-    // REMOVE PLAYED CARDS FROM PLAYER HAND
     cardIds.forEach(id => {
       const idx = player.cards.findIndex(c => c.id === id);
       if (idx !== -1) player.cards.splice(idx, 1);
     });
 
-    // PUSH ALL CARDS TO DISCARD PILE
     playedCards.forEach((c, index) => {
       if (c.color === 'Wild') c.color = chosenColor || 'Red';
-      
-      // LAST CARD IN STACK DETERMINES COLOR IF CHOSEN
       if (index === playedCards.length - 1 && chosenColor && c.color !== 'Wild') {
         c.color = chosenColor;
       }
       addCardToPile(room, c);
     });
+
+    // AUTOMATIC UNO PENALTY CHECK
+    if (player.cards.length === 1) {
+      if (!room.unoCalled[player.sessionId]) {
+        if (room.deck.length === 0) room.deck = createDeck();
+        player.cards.push(room.deck.pop());
+        io.to(socket.roomCode).emit('chatMessage', { 
+          sender: 'System', 
+          text: `⚠️ ${player.name} forgot to call UNO before playing! +1 Card Penalty!` 
+        });
+      }
+    } else if (player.cards.length > 1) {
+      // RESET UNO CALL STATUS IF PLAYER HAS MORE THAN 1 CARD
+      room.unoCalled[player.sessionId] = false;
+    }
 
     const lastCard = playedCards[playedCards.length - 1];
 
@@ -334,31 +352,12 @@ io.on('connection', (socket) => {
       player.cards.push(room.deck.pop());
     }
 
+    if (player.cards.length > 1) {
+      room.unoCalled[player.sessionId] = false;
+    }
+
     socket.emit('yourHand', player.cards);
     advanceTurn(room, 1);
-  });
-
-  socket.on('callUno', () => {
-    const room = rooms[socket.roomCode];
-    if (!room) return;
-    
-    room.unoCalled[socket.sessionId] = true;
-    io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🚨 ${socket.username} called UNO!` });
-    socket.emit('unoAcknowledged');
-  });
-
-  socket.on('catchUno', (targetSessionId) => {
-    const room = rooms[socket.roomCode];
-    if (!room) return;
-    const target = room.players.find(p => p.sessionId === targetSessionId);
-    if (target && target.cards.length === 1 && !room.unoCalled[targetSessionId]) {
-      for (let i = 0; i < 2; i++) {
-        if (room.deck.length === 0) room.deck = createDeck();
-        target.cards.push(room.deck.pop());
-      }
-      io.to(target.socketId).emit('yourHand', target.cards);
-      io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🎯 ${socket.username} caught ${target.name} for not calling UNO! +2 cards!` });
-    }
   });
 
   socket.on('sendChat', (text) => {
@@ -381,7 +380,6 @@ io.on('connection', (socket) => {
       if (player) {
         player.connected = false;
 
-        // 60-SECOND RECONNECT WINDOW FOR MOBILE REFRESHES
         player.disconnectTimeout = setTimeout(() => {
           room.players = room.players.filter(p => p.sessionId !== socket.sessionId);
 

@@ -245,7 +245,6 @@
       <button id="playSelectedBtn" onclick="submitSelectedCards()" style="background-color: #28a745;" class="hidden">Play Selected Stack</button>
       <button onclick="drawCard()" style="background-color: #e67e22;">Draw Card</button>
       <button id="unoBtn" onclick="callUno()" style="background-color: #e74c3c;">🚨 UNO!</button>
-      <button onclick="openCatchModal()" style="background-color: #fd7e14;">🎯 Catch!</button>
     </div>
 
     <div style="margin-top: 4px;">
@@ -275,23 +274,13 @@
     </div>
   </div>
 
-  <div id="catchModal" class="modal-overlay hidden">
-    <div class="modal-card">
-      <h3>Who forgot to call UNO?</h3>
-      <div id="catchPlayerList"></div>
-      <button onclick="document.getElementById('catchModal').classList.add('hidden')" style="background-color:#6c757d; width:100%;">Cancel</button>
-    </div>
-  </div>
-
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    let activePlayersList = [];
     let isHost = false;
     let selectedCards = [];
     let currentHand = [];
 
-    // URL PARSING FOR RECONNECTION DEEP-LINK
     function getUrlParams() {
       const hash = window.location.hash.substring(1);
       const parts = hash.split('?');
@@ -323,7 +312,6 @@
       localStorage.setItem('uno_username', username);
       localStorage.setItem('uno_avatar', avatar);
 
-      // SAVE ROOM AND SESSION IDENTIFIER INTO URL HASH
       window.location.hash = `${roomCode}?session=${sessionId}`;
 
       socket.emit('joinRoom', { username, roomCode, avatar, sessionId });
@@ -462,20 +450,6 @@
       updateHandDisplay();
     }
 
-    function openCatchModal() {
-      const container = document.getElementById('catchPlayerList');
-      container.innerHTML = activePlayersList
-        .filter(p => p.sessionId !== sessionId)
-        .map(p => `<button onclick="executeCatch('${p.sessionId}')" style="width:100%; margin:4px 0;">Catch ${p.avatar} ${p.name}</button>`)
-        .join('');
-      document.getElementById('catchModal').classList.remove('hidden');
-    }
-
-    function executeCatch(targetSessionId) {
-      document.getElementById('catchModal').classList.add('hidden');
-      socket.emit('catchUno', targetSessionId);
-    }
-
     socket.on('startCountdown', (sec) => {
       document.getElementById('countdownDisplay').innerText = `Game starting in ${sec}...`;
       document.getElementById('hostControls').classList.add('hidden');
@@ -485,7 +459,6 @@
     socket.on('errorMsg', (msg) => { alert(msg); window.location.hash = ''; location.reload(); });
 
     socket.on('updateLobby', (data) => {
-      activePlayersList = data.players;
       isHost = (data.hostSessionId === sessionId);
 
       document.getElementById('playerList').innerHTML = data.players.map(p => `
