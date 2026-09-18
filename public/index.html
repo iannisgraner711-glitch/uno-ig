@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Private Card Game Deluxe</title>
+  <title>UNO Party</title>
   <style>
     :root {
       --bg-color: #121212;
@@ -47,7 +47,7 @@
 
     .hidden { display: none !important; }
 
-    .turn-bar { font-size: clamp(14px, 3.5vw, 18px); font-weight: bold; margin: 4px 0; }
+    .turn-bar { font-size: clamp(16px, 4vw, 22px); font-weight: bold; margin: 4px 0; }
     .timer-container { width: min(85%, 400px); background: #333; height: clamp(6px, 1.5vh, 10px); border-radius: 5px; margin: 4px auto 10px auto; overflow: hidden; }
     .timer-fill { width: 100%; height: 100%; background: #e74c3c; transition: width 1s linear; }
 
@@ -106,7 +106,7 @@
     .lobby-item { background: #222; padding: 8px; margin: 6px 0; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
 
     .chat-section { margin-top: auto; padding-top: 10px; padding-bottom: 5px; }
-    .chat-box { background: rgba(0,0,0,0.6); width: min(90%, 400px); height: 70px; overflow-y: auto; margin: 0 auto 6px auto; border-radius: 6px; padding: 6px; text-align: left; font-size: 12px; }
+    .chat-box { background: rgba(0,0,0,0.6); width: min(90%, 400px); height: 70px; overflow-y: auto; margin: 0 auto 6px auto; border-radius: 6px; padding: 6px; text-align: left; font-size: 13px; }
 
     .floating-emoji {
       position: fixed; font-size: 45px; z-index: 999; pointer-events: none;
@@ -133,16 +133,41 @@
   </header>
 
   <div id="loginScreen">
-    <h2>Join Room</h2>
-    <input type="text" id="username" placeholder="Your Name" /><br>
+    <h2>Select Avatar & Join</h2>
     
-    <select id="avatarSelect">
-      <option value="🤠">🤠 Cowboy</option>
-      <option value="🤖">🤖 Robot</option>
-      <option value="🦊">🦊 Fox</option>
-      <option value="🥷">🥷 Ninja</option>
-      <option value="👑">👑 Crown</option>
-      <option value="👽">👽 Alien</option>
+    <label style="font-size: 14px; color: #aaa;">Choose Avatar Emoji:</label><br>
+    <select id="avatarSelect" style="font-size: 24px; padding: 6px 12px; margin-bottom: 12px;">
+      <option value="🤠">🤠</option>
+      <option value="🤖">🤖</option>
+      <option value="🦊">🦊</option>
+      <option value="🥷">🥷</option>
+      <option value="👑">👑</option>
+      <option value="👽">👽</option>
+      <option value="👾">👾</option>
+      <option value="🦄">🦄</option>
+      <option value="🦁">🦁</option>
+      <option value="🐉">🐉</option>
+      <option value="🐲">🐲</option>
+      <option value="👻">👻</option>
+      <option value="🐼">🐼</option>
+      <option value="🐯">🐯</option>
+      <option value="🧙‍♂️">🧙‍♂️</option>
+      <option value="🚀">🚀</option>
+      <option value="🔥">🔥</option>
+      <option value="😎">😎</option>
+      <option value="💀">💀</option>
+      <option value="🤡">🤡</option>
+      <option value="💩">💩</option>
+      <option value="🐙">🐙</option>
+      <option value="🦈">🦈</option>
+      <option value="🦉">🦉</option>
+      <option value="🐸">🐸</option>
+      <option value="🍕">🍕</option>
+      <option value="🍔">🍔</option>
+      <option value="🥑">🥑</option>
+      <option value="⚽">⚽</option>
+      <option value="🎮">🎮</option>
+      <option value="💎">💎</option>
     </select><br>
 
     <input type="text" id="roomCode" placeholder="Room Code" /><br>
@@ -171,7 +196,7 @@
     <button onclick="copyInviteLink()" style="background-color: #17a2b8; font-size: 12px; padding: 4px 10px;">📋 Copy Invite Link</button>
 
     <h3>Players:</h3>
-    <ul id="playerList" style="list-style:none; padding:0;"></ul>
+    <ul id="playerList" style="list-style:none; padding:0; font-size: 28px;"></ul>
 
     <div id="hostControls">
       <button id="startBtn" onclick="requestStart()" style="background-color: #007bff;">Start Game</button>
@@ -183,9 +208,9 @@
 
   <div id="gameScreen" class="hidden" style="display: flex; flex-direction: column; flex-grow: 1;">
     <div class="turn-bar">
-      Current: <span id="currentTurn" style="color:#2ecc71;">--</span><br>
-      <small style="color:#aaa;">Next up: <span id="nextTurn">--</span></small>
-      <div id="stackIndicator" style="color:#e74c3c; font-weight:bold;"></div>
+      Current: <span id="currentTurn" style="color:#2ecc71;">--</span>
+      <small style="color:#aaa; font-size:14px;"> | Next: <span id="nextTurn">--</span></small>
+      <div id="stackIndicator" style="color:#e74c3c; font-weight:bold; font-size:14px;"></div>
     </div>
 
     <div class="timer-container">
@@ -213,13 +238,13 @@
 
     <div class="chat-section">
       <div class="chat-box" id="chatBox"></div>
-      <input type="text" id="chatInput" placeholder="Send chat..." onkeydown="if(event.key==='Enter') sendChat()"/>
+      <input type="text" id="chatInput" placeholder="Send message..." onkeydown="if(event.key==='Enter') sendChat()"/>
     </div>
   </div>
 
   <div id="colorModal" class="modal-overlay hidden">
     <div class="modal-card" style="text-align: center;">
-      <h3>Select Final Card Color</h3>
+      <h3>Select Color</h3>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; height: 140px;">
         <button class="Red" onclick="selectWildColor('Red')">Red</button>
         <button class="Blue" onclick="selectWildColor('Blue')">Blue</button>
@@ -262,21 +287,17 @@
     }
 
     function joinDirect() {
-      let username = document.getElementById('username').value.trim();
       let roomCode = document.getElementById('roomCode').value.trim();
       const avatar = document.getElementById('avatarSelect').value;
       const isPrivate = document.getElementById('privateCheck').checked;
       const password = document.getElementById('roomPassword').value.trim();
 
-      if (!username) username = "Player_" + Math.floor(Math.random() * 899 + 100);
       if (!roomCode) return alert("Please enter a room code!");
 
-      localStorage.setItem('uno_username', username);
       localStorage.setItem('uno_avatar', avatar);
-
       window.location.hash = `${roomCode}?session=${sessionId}`;
 
-      socket.emit('joinRoom', { username, roomCode, avatar, sessionId, isPrivate, password });
+      socket.emit('joinRoom', { roomCode, avatar, sessionId, isPrivate, password });
 
       document.getElementById('loginScreen').classList.add('hidden');
       document.getElementById('lobbyScreen').classList.remove('hidden');
@@ -286,14 +307,11 @@
     function copyInviteLink() {
       const roomCode = document.getElementById('roomCode').value.trim() || urlData.room;
       const url = `${window.location.origin}/#${roomCode}`;
-      navigator.clipboard.writeText(url).then(() => alert("Copied Invite Link to clipboard!"));
+      navigator.clipboard.writeText(url).then(() => alert("Copied Invite Link!"));
     }
 
     window.addEventListener('load', () => {
-      const savedName = localStorage.getItem('uno_username');
       const savedAvatar = localStorage.getItem('uno_avatar');
-
-      if (savedName) document.getElementById('username').value = savedName;
       if (savedAvatar) document.getElementById('avatarSelect').value = savedAvatar;
 
       if (urlData.room) {
@@ -345,7 +363,7 @@
     }
 
     socket.on('kickedMsg', () => {
-      alert("You were kicked from the lobby by the host.");
+      alert("You were kicked from the lobby.");
       goHome();
     });
 
@@ -433,8 +451,8 @@
       isHost = (data.hostSessionId === sessionId);
 
       document.getElementById('playerList').innerHTML = data.players.map(p => `
-        <li>
-          ${p.avatar} ${p.name} 
+        <li style="margin: 6px 0;">
+          ${p.avatar} 
           ${p.sessionId === data.hostSessionId ? '<span class="host-badge">HOST</span>' : ''}
           ${isHost && p.sessionId !== sessionId ? `<button class="kick-btn" onclick="kickPlayer('${p.sessionId}')">Kick</button>` : ''}
         </li>
@@ -542,7 +560,7 @@
     });
 
     socket.on('gameOver', (finalLeaderboard) => {
-      alert("🎉 Game Over!\n\nRankings:\n" + finalLeaderboard.map((n, i) => `${i + 1}. ${n}`).join('\n'));
+      alert("🎉 Game Over!\n\nRankings:\n" + finalLeaderboard.map((a, i) => `${i + 1}. ${a}`).join('\n'));
       goHome();
     });
   </script>
