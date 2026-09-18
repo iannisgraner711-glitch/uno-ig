@@ -319,22 +319,53 @@
     let isHost = false;
     let is70Enabled = false;
 
+    // SESSION IDENTIFIER FOR PERSISTENT RECONNECTS
+    let sessionId = localStorage.getItem('uno_session_id');
+    if (!sessionId) {
+      sessionId = 'sess_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('uno_session_id', sessionId);
+    }
+
     function changeTheme(theme) {
       document.body.className = '';
       if (theme !== 'dark') document.body.classList.add('theme-' + theme);
     }
 
     function joinDirect() {
-      const username = document.getElementById('username').value;
-      const roomCode = document.getElementById('roomCode').value;
+      let username = document.getElementById('username').value.trim();
+      let roomCode = document.getElementById('roomCode').value.trim();
       const avatar = document.getElementById('avatarSelect').value;
-      if (username && roomCode) {
-        socket.emit('joinRoom', { username, roomCode, avatar });
-        document.getElementById('loginScreen').classList.add('hidden');
-        document.getElementById('lobbyScreen').classList.remove('hidden');
-        document.getElementById('roomTitle').innerText = "Room: " + roomCode;
-      }
+
+      if (!username) username = "Player_" + Math.floor(Math.random() * 899 + 100);
+      if (!roomCode) return alert("Please enter a room code!");
+
+      localStorage.setItem('uno_username', username);
+      localStorage.setItem('uno_avatar', avatar);
+
+      // UPDATE URL HASH WITHOUT REFRESHING PAGE
+      window.location.hash = roomCode;
+
+      socket.emit('joinRoom', { username, roomCode, avatar, sessionId });
+
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('lobbyScreen').classList.remove('hidden');
+      document.getElementById('roomTitle').innerText = "Room: " + roomCode;
     }
+
+    // AUTO RECONNECT IF URL CONTAINS A ROOM HASH
+    window.addEventListener('load', () => {
+      const savedName = localStorage.getItem('uno_username');
+      const savedAvatar = localStorage.getItem('uno_avatar');
+
+      if (savedName) document.getElementById('username').value = savedName;
+      if (savedAvatar) document.getElementById('avatarSelect').value = savedAvatar;
+
+      const roomHash = window.location.hash.substring(1).trim();
+      if (roomHash) {
+        document.getElementById('roomCode').value = roomHash;
+        joinDirect();
+      }
+    });
 
     function openLobbyBrowser() {
       document.getElementById('lobbyBrowserModal').classList.remove('hidden');
@@ -380,7 +411,6 @@
 
     function drawCard() { socket.emit('drawCard'); }
     
-    // INSTANT DIRECT CALL FOR UNO
     function callUno() { 
       socket.emit('callUno'); 
     }
@@ -392,7 +422,6 @@
     });
 
     function handleCardClick(cardId, color, val) {
-      // ONLY SHOW SWAP PROMPT IF 7-0 IS ACTIVE OR FOR SWAP CARDS
       if (val === 'Swap' || (val === '7' && is70Enabled)) {
         pendingSwapCardId = cardId;
         openSwapModal(color);
@@ -407,20 +436,20 @@
     function openSwapModal(color) {
       const container = document.getElementById('swapPlayerList');
       container.innerHTML = activePlayersList
-        .filter(p => p.id !== socket.id)
-        .map(p => `<button onclick="confirmSwap('${p.id}', '${color}')" style="width:100%; margin:4px 0;">Swap with ${p.avatar} ${p.name}</button>`)
+        .filter(p => p.sessionId !== sessionId)
+        .map(p => `<button onclick="confirmSwap('${p.sessionId}', '${color}')" style="width:100%; margin:4px 0;">Swap with ${p.avatar} ${p.name}</button>`)
         .join('');
       document.getElementById('swapModal').classList.remove('hidden');
     }
 
-    function confirmSwap(targetId, color) {
+    function confirmSwap(targetSessionId, color) {
       document.getElementById('swapModal').classList.add('hidden');
       if (color === 'Wild') {
         pendingWildCardId = pendingSwapCardId;
         document.getElementById('colorModal').classList.remove('hidden');
-        window.tempSwapTarget = targetId;
+        window.tempSwapTarget = targetSessionId;
       } else {
-        socket.emit('playCard', { cardId: pendingSwapCardId, swapTargetId: targetId });
+        socket.emit('playCard', { cardId: pendingSwapCardId, swapTargetId: targetSessionId });
       }
     }
 
@@ -440,15 +469,15 @@
     function openCatchModal() {
       const container = document.getElementById('catchPlayerList');
       container.innerHTML = activePlayersList
-        .filter(p => p.id !== socket.id)
-        .map(p => `<button onclick="executeCatch('${p.id}')" style="width:100%; margin:4px 0;">Catch ${p.avatar} ${p.name}</button>`)
+        .filter(p => p.sessionId !== sessionId)
+        .map(p => `<button onclick="executeCatch('${p.sessionId}')" style="width:100%; margin:4px 0;">Catch ${p.avatar} ${p.name}</button>`)
         .join('');
       document.getElementById('catchModal').classList.remove('hidden');
     }
 
-    function executeCatch(targetId) {
+    function executeCatch(targetSessionId) {
       document.getElementById('catchModal').classList.add('hidden');
-      socket.emit('catchUno', targetId);
+      socket.emit('catchUno', targetSessionId);
     }
 
     socket.on('startCountdown', (sec) => {
@@ -457,14 +486,14 @@
       document.getElementById('guestWaitingMsg').classList.add('hidden');
     });
 
-    socket.on('errorMsg', (msg) => { alert(msg); location.reload(); });
+    socket.on('errorMsg', (msg) => { alert(msg); window.location.hash = ''; location.reload(); });
 
     socket.on('updateLobby', (data) => {
       activePlayersList = data.players;
-      isHost = (data.hostId === socket.id);
+      isHost = (data.hostSessionId === sessionId);
 
       document.getElementById('playerList').innerHTML = data.players.map(p => `
-        <li>${p.avatar} ${p.name} ${p.id === data.hostId ? '<span class="host-badge">HOST</span>' : ''}</li>
+        <li>${p.avatar} ${p.name} ${p.sessionId === data.hostSessionId ? '<span class="host-badge">HOST</span>' : ''}</li>
       `).join('');
 
       document.getElementById('ruleStacking').disabled = !isHost;
@@ -509,6 +538,7 @@
     }
 
     socket.on('gameState', (data) => {
+      document.getElementById('loginScreen').classList.add('hidden');
       document.getElementById('lobbyScreen').classList.add('hidden');
       document.getElementById('gameScreen').classList.remove('hidden');
 
@@ -582,6 +612,7 @@
 
     socket.on('gameOver', (finalLeaderboard) => {
       alert("🎉 Game Over!\n\nRankings:\n" + finalLeaderboard.map((n, i) => `${i + 1}. ${n}`).join('\n'));
+      window.location.hash = '';
       location.reload();
     });
   </script>
