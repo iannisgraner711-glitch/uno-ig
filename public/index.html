@@ -37,24 +37,8 @@
       border-radius: 8px;
       margin-bottom: 8px;
     }
-    .game-title { 
-      font-size: clamp(14px, 3.5vw, 20px); 
-      font-weight: bold; 
-      margin: 0; 
-      cursor: pointer;
-      user-select: none;
-      transition: opacity 0.2s;
-    }
-    .game-title:hover { opacity: 0.8; }
-    
-    .theme-picker {
-      padding: 6px 10px;
-      font-size: clamp(12px, 2.8vw, 14px);
-      border-radius: 6px;
-      background: #333;
-      color: #fff;
-      border: 1px solid #555;
-    }
+    .game-title { font-size: clamp(14px, 3.5vw, 20px); font-weight: bold; margin: 0; cursor: pointer; user-select: none; }
+    .theme-picker { padding: 6px 10px; font-size: clamp(12px, 2.8vw, 14px); border-radius: 6px; background: #333; color: #fff; border: 1px solid #555; }
 
     input, button, select { padding: clamp(8px, 2vw, 12px); margin: 4px; font-size: clamp(13px, 3vw, 16px); border-radius: 8px; border: none; outline: none; }
     button { background-color: #28a745; color: white; font-weight: bold; cursor: pointer; transition: transform 0.1s; }
@@ -81,25 +65,13 @@
       transition: transform 0.2s ease, border-color 0.2s ease;
       transform-origin: bottom center;
     }
-    .card.selected {
-      border: 4px solid #f1c40f !important;
-      transform: translateY(-25px) scale(1.1) !important;
-      z-index: 150 !important;
-    }
+    .card.selected { border: 4px solid #f1c40f !important; transform: translateY(-25px) scale(1.1) !important; z-index: 150 !important; }
     .card:hover { transform: translateY(-20px) scale(1.15); z-index: 100; }
     .card .corner { position: absolute; top: 2px; left: 4px; font-size: clamp(9px, 2vw, 12px); font-weight: bold; }
     .card .center-oval {
-      width: 65%;
-      height: 65%;
-      background: white;
-      border-radius: 50%;
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%) rotate(-15deg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      width: 65%; height: 65%; background: white; border-radius: 50%;
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-15deg);
+      display: flex; align-items: center; justify-content: center;
     }
     .card .center-number { font-size: clamp(14px, 3.5vw, 22px); font-weight: 900; }
 
@@ -120,56 +92,32 @@
     .direction-arrow.reverse { transform: rotate(-180deg); border-color: #e74c3c; }
 
     .hand-container {
-      display: flex;
-      justify-content: center;
-      align-items: flex-end;
-      margin: 15px auto 10px auto;
-      min-height: calc(var(--card-h) + 35px);
-      width: 100%;
-      max-width: 100vw;
-      padding: 25px 15px 15px 15px;
-      box-sizing: border-box;
-      overflow-x: auto;
-      overflow-y: visible;
+      display: flex; justify-content: center; align-items: flex-end;
+      margin: 15px auto 10px auto; min-height: calc(var(--card-h) + 35px);
+      width: 100%; max-width: 100vw; padding: 25px 15px 15px 15px;
+      box-sizing: border-box; overflow-x: auto; overflow-y: visible;
     }
 
     .host-badge { background: #f39c12; color: #111; font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 4px; margin-left: 5px; }
-    .waiting-msg { font-style: italic; color: #f1c40f; font-size: 14px; margin-top: 8px; }
+    .kick-btn { background: #dc3545; font-size: 10px; padding: 2px 6px; margin-left: 8px; border-radius: 4px; cursor: pointer; }
 
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 300; }
     .modal-card { background: var(--panel-bg); padding: 16px; border-radius: 12px; width: min(90vw, 320px); max-height: 80vh; overflow-y: auto; text-align: left; }
     .lobby-item { background: #222; padding: 8px; margin: 6px 0; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
 
-    .chat-section {
-      margin-top: auto;
-      padding-top: 10px;
-      padding-bottom: 5px;
-    }
-    .chat-box { 
-      background: rgba(0,0,0,0.6); 
-      width: min(90%, 400px); 
-      height: 70px; 
-      overflow-y: auto; 
-      margin: 0 auto 6px auto; 
-      border-radius: 6px; 
-      padding: 6px; 
-      text-align: left; 
-      font-size: 12px; 
-    }
+    .chat-section { margin-top: auto; padding-top: 10px; padding-bottom: 5px; }
+    .chat-box { background: rgba(0,0,0,0.6); width: min(90%, 400px); height: 70px; overflow-y: auto; margin: 0 auto 6px auto; border-radius: 6px; padding: 6px; text-align: left; font-size: 12px; }
 
     .floating-emoji {
-      position: fixed;
-      font-size: 45px;
-      z-index: 999;
-      pointer-events: none;
+      position: fixed; font-size: 45px; z-index: 999; pointer-events: none;
       animation: floatUp 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
     }
 
     @keyframes floatUp {
-      0% { opacity: 0; transform: translateY(0) scale(0.5) rotate(0deg); }
-      20% { opacity: 1; transform: translateY(-30px) scale(1.2) rotate(-10deg); }
-      80% { opacity: 1; transform: translateY(-120px) scale(1) rotate(10deg); }
-      100% { opacity: 0; transform: translateY(-180px) scale(0.8) rotate(0deg); }
+      0% { opacity: 0; transform: translateY(0) scale(0.5); }
+      20% { opacity: 1; transform: translateY(-30px) scale(1.2); }
+      80% { opacity: 1; transform: translateY(-120px) scale(1); }
+      100% { opacity: 0; transform: translateY(-180px) scale(0.8); }
     }
   </style>
 </head>
@@ -195,19 +143,15 @@
       <option value="🥷">🥷 Ninja</option>
       <option value="👑">👑 Crown</option>
       <option value="👽">👽 Alien</option>
-      <option value="🦄">🦄 Unicorn</option>
-      <option value="🦁">🦁 Lion</option>
-      <option value="🐉">🐉 Dragon</option>
-      <option value="👻">👻 Ghost</option>
-      <option value="🐼">🐼 Panda</option>
-      <option value="🐯">🐯 Tiger</option>
-      <option value="🧙‍♂️">🧙‍♂️ Wizard</option>
-      <option value="🚀">🚀 Rocket</option>
-      <option value="🔥">🔥 Fire</option>
-      <option value="😎">😎 Cool</option>
     </select><br>
 
     <input type="text" id="roomCode" placeholder="Room Code" /><br>
+    <input type="password" id="roomPassword" placeholder="Password (Optional)" /><br>
+
+    <div style="margin: 6px 0; font-size: 14px;">
+      <label><input type="checkbox" id="privateCheck"> Hide from Lobby Browser</label>
+    </div>
+
     <button onclick="joinDirect()">Join / Create</button><br>
     <button onclick="openLobbyBrowser()" style="background-color: #17a2b8;">🌐 Browse Lobbies</button>
   </div>
@@ -224,13 +168,15 @@
     <h2 id="roomTitle"></h2>
     <h3 id="countdownDisplay" style="color:#f1c40f;"></h3>
 
+    <button onclick="copyInviteLink()" style="background-color: #17a2b8; font-size: 12px; padding: 4px 10px;">📋 Copy Invite Link</button>
+
     <h3>Players:</h3>
     <ul id="playerList" style="list-style:none; padding:0;"></ul>
 
     <div id="hostControls">
       <button id="startBtn" onclick="requestStart()" style="background-color: #007bff;">Start Game</button>
     </div>
-    <div id="guestWaitingMsg" class="waiting-msg hidden">
+    <div id="guestWaitingMsg" class="waiting-msg hidden" style="font-style:italic; color:#f1c40f;">
       ⏳ Waiting for host to start the game...
     </div>
   </div>
@@ -319,6 +265,8 @@
       let username = document.getElementById('username').value.trim();
       let roomCode = document.getElementById('roomCode').value.trim();
       const avatar = document.getElementById('avatarSelect').value;
+      const isPrivate = document.getElementById('privateCheck').checked;
+      const password = document.getElementById('roomPassword').value.trim();
 
       if (!username) username = "Player_" + Math.floor(Math.random() * 899 + 100);
       if (!roomCode) return alert("Please enter a room code!");
@@ -328,11 +276,17 @@
 
       window.location.hash = `${roomCode}?session=${sessionId}`;
 
-      socket.emit('joinRoom', { username, roomCode, avatar, sessionId });
+      socket.emit('joinRoom', { username, roomCode, avatar, sessionId, isPrivate, password });
 
       document.getElementById('loginScreen').classList.add('hidden');
       document.getElementById('lobbyScreen').classList.remove('hidden');
       document.getElementById('roomTitle').innerText = "Room: " + roomCode;
+    }
+
+    function copyInviteLink() {
+      const roomCode = document.getElementById('roomCode').value.trim() || urlData.room;
+      const url = `${window.location.origin}/#${roomCode}`;
+      navigator.clipboard.writeText(url).then(() => alert("Copied Invite Link to clipboard!"));
     }
 
     window.addEventListener('load', () => {
@@ -360,19 +314,24 @@
     socket.on('lobbyList', (lobbies) => {
       const container = document.getElementById('lobbyListContainer');
       if (lobbies.length === 0) {
-        container.innerHTML = '<p style="color:#aaa;">No active lobbies found.</p>';
+        container.innerHTML = '<p style="color:#aaa;">No public lobbies found.</p>';
         return;
       }
       container.innerHTML = lobbies.map(l => `
         <div class="lobby-item">
-          <div><strong>Room ${l.code}</strong> (${l.players}/12)</div>
-          <button onclick="joinFromBrowser('${l.code}')">Join</button>
+          <div><strong>Room ${l.code}</strong> ${l.hasPassword ? '🔒' : ''} (${l.players}/12)</div>
+          <button onclick="joinFromBrowser('${l.code}', ${l.hasPassword})">Join</button>
         </div>
       `).join('');
     });
 
-    function joinFromBrowser(code) {
+    function joinFromBrowser(code, hasPassword) {
       document.getElementById('roomCode').value = code;
+      if (hasPassword) {
+        const pwd = prompt("Enter Room Password:");
+        if (pwd === null) return;
+        document.getElementById('roomPassword').value = pwd;
+      }
       closeLobbyBrowser();
       joinDirect();
     }
@@ -381,15 +340,22 @@
       if (isHost) socket.emit('requestStartGame');
     }
 
+    function kickPlayer(targetSessionId) {
+      if (isHost) socket.emit('kickPlayer', targetSessionId);
+    }
+
+    socket.on('kickedMsg', () => {
+      alert("You were kicked from the lobby by the host.");
+      goHome();
+    });
+
     function drawCard() { 
       selectedCards = [];
       updateHandDisplay();
       socket.emit('drawCard'); 
     }
     
-    function callUno() { 
-      socket.emit('callUno'); 
-    }
+    function callUno() { socket.emit('callUno'); }
 
     socket.on('unoAcknowledged', () => {
       const unoBtn = document.getElementById('unoBtn');
@@ -402,22 +368,17 @@
       if (!clickedCard) return;
 
       const index = selectedCards.indexOf(cardId);
-      
       if (index > -1) {
         selectedCards.splice(index, 1);
       } else {
         if (selectedCards.length > 0) {
           const firstSelected = currentHand.find(c => c.id === selectedCards[0]);
-          if (firstSelected && firstSelected.value !== clickedCard.value) {
-            selectedCards = [cardId];
-          } else {
-            selectedCards.push(cardId);
-          }
+          if (firstSelected && firstSelected.value !== clickedCard.value) selectedCards = [cardId];
+          else selectedCards.push(cardId);
         } else {
           selectedCards.push(cardId);
         }
       }
-
       updateHandDisplay();
     }
 
@@ -433,18 +394,14 @@
       currentHand.forEach(c => {
         const el = document.getElementById(`card-${c.id}`);
         if (el) {
-          if (selectedCards.includes(c.id)) {
-            el.classList.add('selected');
-          } else {
-            el.classList.remove('selected');
-          }
+          if (selectedCards.includes(c.id)) el.classList.add('selected');
+          else el.classList.remove('selected');
         }
       });
     }
 
     function submitSelectedCards() {
       if (selectedCards.length === 0) return;
-
       const lastCardId = selectedCards[selectedCards.length - 1];
       const lastCard = currentHand.find(c => c.id === lastCardId);
 
@@ -476,7 +433,11 @@
       isHost = (data.hostSessionId === sessionId);
 
       document.getElementById('playerList').innerHTML = data.players.map(p => `
-        <li>${p.avatar} ${p.name} ${p.sessionId === data.hostSessionId ? '<span class="host-badge">HOST</span>' : ''}</li>
+        <li>
+          ${p.avatar} ${p.name} 
+          ${p.sessionId === data.hostSessionId ? '<span class="host-badge">HOST</span>' : ''}
+          ${isHost && p.sessionId !== sessionId ? `<button class="kick-btn" onclick="kickPlayer('${p.sessionId}')">Kick</button>` : ''}
+        </li>
       `).join('');
 
       if (isHost) {
@@ -568,9 +529,7 @@
       box.scrollTop = box.scrollHeight;
     });
 
-    function sendEmoji(emoji) {
-      socket.emit('sendEmoji', emoji);
-    }
+    function sendEmoji(emoji) { socket.emit('sendEmoji', emoji); }
 
     socket.on('displayEmoji', (data) => {
       const el = document.createElement('div');
