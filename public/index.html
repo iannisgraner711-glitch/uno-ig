@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>UNO Party</title>
+  <title>UNO Party Deluxe</title>
   <style>
     :root {
       --bg-color: #121212;
@@ -47,7 +47,7 @@
 
     .hidden { display: none !important; }
 
-    .turn-bar { font-size: clamp(16px, 4vw, 22px); font-weight: bold; margin: 4px 0; }
+    .turn-bar { font-size: clamp(15px, 3.8vw, 20px); font-weight: bold; margin: 4px 0; }
     .timer-container { width: min(85%, 400px); background: #333; height: clamp(6px, 1.5vh, 10px); border-radius: 5px; margin: 4px auto 10px auto; overflow: hidden; }
     .timer-fill { width: 100%; height: 100%; background: #e74c3c; transition: width 1s linear; }
 
@@ -133,10 +133,11 @@
   </header>
 
   <div id="loginScreen">
-    <h2>Select Avatar & Join</h2>
+    <h2>Join Room</h2>
     
-    <label style="font-size: 14px; color: #aaa;">Choose Avatar Emoji:</label><br>
-    <select id="avatarSelect" style="font-size: 24px; padding: 6px 12px; margin-bottom: 12px;">
+    <input type="text" id="username" placeholder="Your Name" /><br>
+
+    <select id="avatarSelect" style="font-size: 20px; padding: 6px 12px; margin: 4px;">
       <option value="🤠">🤠</option>
       <option value="🤖">🤖</option>
       <option value="🦊">🦊</option>
@@ -196,7 +197,7 @@
     <button onclick="copyInviteLink()" style="background-color: #17a2b8; font-size: 12px; padding: 4px 10px;">📋 Copy Invite Link</button>
 
     <h3>Players:</h3>
-    <ul id="playerList" style="list-style:none; padding:0; font-size: 28px;"></ul>
+    <ul id="playerList" style="list-style:none; padding:0; font-size: 18px;"></ul>
 
     <div id="hostControls">
       <button id="startBtn" onclick="requestStart()" style="background-color: #007bff;">Start Game</button>
@@ -208,8 +209,8 @@
 
   <div id="gameScreen" class="hidden" style="display: flex; flex-direction: column; flex-grow: 1;">
     <div class="turn-bar">
-      Current: <span id="currentTurn" style="color:#2ecc71;">--</span>
-      <small style="color:#aaa; font-size:14px;"> | Next: <span id="nextTurn">--</span></small>
+      Current: <span id="currentTurn" style="color:#2ecc71;">--</span><br>
+      <small style="color:#aaa; font-size:13px;">Next: <span id="nextTurn">--</span></small>
       <div id="stackIndicator" style="color:#e74c3c; font-weight:bold; font-size:14px;"></div>
     </div>
 
@@ -287,6 +288,7 @@
     }
 
     function joinDirect() {
+      let username = document.getElementById('username').value.trim();
       let roomCode = document.getElementById('roomCode').value.trim();
       const avatar = document.getElementById('avatarSelect').value;
       const isPrivate = document.getElementById('privateCheck').checked;
@@ -294,10 +296,11 @@
 
       if (!roomCode) return alert("Please enter a room code!");
 
+      localStorage.setItem('uno_username', username);
       localStorage.setItem('uno_avatar', avatar);
       window.location.hash = `${roomCode}?session=${sessionId}`;
 
-      socket.emit('joinRoom', { roomCode, avatar, sessionId, isPrivate, password });
+      socket.emit('joinRoom', { username, roomCode, avatar, sessionId, isPrivate, password });
 
       document.getElementById('loginScreen').classList.add('hidden');
       document.getElementById('lobbyScreen').classList.remove('hidden');
@@ -311,7 +314,10 @@
     }
 
     window.addEventListener('load', () => {
+      const savedName = localStorage.getItem('uno_username');
       const savedAvatar = localStorage.getItem('uno_avatar');
+
+      if (savedName) document.getElementById('username').value = savedName;
       if (savedAvatar) document.getElementById('avatarSelect').value = savedAvatar;
 
       if (urlData.room) {
@@ -452,7 +458,7 @@
 
       document.getElementById('playerList').innerHTML = data.players.map(p => `
         <li style="margin: 6px 0;">
-          ${p.avatar} 
+          ${p.avatar} ${p.name}
           ${p.sessionId === data.hostSessionId ? '<span class="host-badge">HOST</span>' : ''}
           ${isHost && p.sessionId !== sessionId ? `<button class="kick-btn" onclick="kickPlayer('${p.sessionId}')">Kick</button>` : ''}
         </li>
@@ -560,7 +566,7 @@
     });
 
     socket.on('gameOver', (finalLeaderboard) => {
-      alert("🎉 Game Over!\n\nRankings:\n" + finalLeaderboard.map((a, i) => `${i + 1}. ${a}`).join('\n'));
+      alert("🎉 Game Over!\n\nRankings:\n" + finalLeaderboard.map((p, i) => `${i + 1}. ${p}`).join('\n'));
       goHome();
     });
   </script>

@@ -93,7 +93,7 @@ function checkGameOverCondition(room) {
   const activePlayers = getActivePlayers(room);
   if (activePlayers.length <= 1) {
     if (room.timer) clearInterval(room.timer);
-    if (activePlayers.length === 1) room.leaderboard.push(activePlayers[0].avatar);
+    if (activePlayers.length === 1) room.leaderboard.push(`${activePlayers[0].avatar} ${activePlayers[0].name}`);
     io.to(room.roomCode).emit('gameOver', room.leaderboard);
     return true;
   }
@@ -121,10 +121,13 @@ function advanceTurn(room, steps = 1) {
     nextIdx = (nextIdx + room.direction + total) % total;
   }
 
+  const currP = room.players[room.currentTurnIndex];
+  const nextP = room.players[nextIdx];
+
   io.to(room.roomCode).emit('gameState', {
     discardPile: room.discardPile,
-    currentTurn: room.players[room.currentTurnIndex].avatar,
-    nextTurn: room.players[nextIdx].avatar,
+    currentTurn: `${currP.avatar} ${currP.name}`,
+    nextTurn: `${nextP.avatar} ${nextP.name}`,
     leaderboard: room.leaderboard,
     direction: room.direction,
     stackedDraw: room.stackedDraw,
@@ -158,7 +161,7 @@ function emitLobbyUpdate(roomCode) {
 io.on('connection', (socket) => {
   socket.on('getLobbies', () => broadcastLobbies());
 
-  socket.on('joinRoom', ({ roomCode, avatar, sessionId, isPrivate, password }) => {
+  socket.on('joinRoom', ({ username, roomCode, avatar, sessionId, isPrivate, password }) => {
     if (!rooms[roomCode]) {
       rooms[roomCode] = { 
         hostSessionId: sessionId,
@@ -176,8 +179,11 @@ io.on('connection', (socket) => {
       return socket.emit('errorMsg', 'Incorrect room password!');
     }
 
+    const finalName = username ? username.trim() : "Player_" + Math.floor(Math.random() * 899 + 100);
+
     socket.join(roomCode);
     socket.roomCode = roomCode;
+    socket.username = finalName;
     socket.avatar = avatar || '🤠';
     socket.sessionId = sessionId;
 
@@ -186,12 +192,13 @@ io.on('connection', (socket) => {
     if (existingPlayer) {
       existingPlayer.socketId = socket.id;
       existingPlayer.connected = true;
-      if (avatar) existingPlayer.avatar = avatar;
+      existingPlayer.name = socket.username;
+      existingPlayer.avatar = socket.avatar;
     } else {
       if (room.players.length >= 12) return socket.emit('errorMsg', 'Room full (12 max).');
       if (room.gameStarted) return socket.emit('errorMsg', 'Game in progress.');
 
-      existingPlayer = { sessionId, socketId: socket.id, avatar: socket.avatar, cards: [], finished: false, connected: true };
+      existingPlayer = { sessionId, socketId: socket.id, name: socket.username, avatar: socket.avatar, cards: [], finished: false, connected: true };
       room.players.push(existingPlayer);
     }
 
@@ -204,10 +211,13 @@ io.on('connection', (socket) => {
         nextIdx = (nextIdx + room.direction + room.players.length) % room.players.length;
       }
 
+      const currP = room.players[room.currentTurnIndex];
+      const nextP = room.players[nextIdx];
+
       socket.emit('gameState', {
         discardPile: room.discardPile,
-        currentTurn: room.players[room.currentTurnIndex] ? room.players[room.currentTurnIndex].avatar : '--',
-        nextTurn: room.players[nextIdx] ? room.players[nextIdx].avatar : '--',
+        currentTurn: currP ? `${currP.avatar} ${currP.name}` : '--',
+        nextTurn: nextP ? `${nextP.avatar} ${nextP.name}` : '--',
         leaderboard: room.leaderboard,
         direction: room.direction,
         stackedDraw: room.stackedDraw,
@@ -277,7 +287,7 @@ io.on('connection', (socket) => {
     const room = rooms[socket.roomCode];
     if (!room) return;
     room.unoCalled[socket.sessionId] = true;
-    io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🚨 ${socket.avatar} called UNO!` });
+    io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🚨 ${socket.avatar} ${socket.username} called UNO!` });
     socket.emit('unoAcknowledged');
   });
 
@@ -318,7 +328,7 @@ io.on('connection', (socket) => {
       if (!room.unoCalled[player.sessionId]) {
         if (room.deck.length === 0) room.deck = createDeck();
         player.cards.push(room.deck.pop());
-        io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `⚠️ ${player.avatar} forgot to call UNO! +1 Card Penalty!` });
+        io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `⚠️ ${player.avatar} ${player.name} forgot to call UNO! +1 Card Penalty!` });
       }
     } else if (player.cards.length > 1) {
       room.unoCalled[player.sessionId] = false;
@@ -327,7 +337,7 @@ io.on('connection', (socket) => {
     const lastCard = playedCards[playedCards.length - 1];
     if (player.cards.length === 0) {
       player.finished = true;
-      room.leaderboard.push(player.avatar);
+      room.leaderboard.push(`${player.avatar} ${player.name}`);
     }
 
     if (checkGameOverCondition(room)) return;
@@ -366,11 +376,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('sendChat', (text) => {
-    if (socket.roomCode) io.to(socket.roomCode).emit('chatMessage', { sender: socket.avatar, text });
+    if (socket.roomCode) io.to(socket.roomCode).emit('chatMessage', { sender: `${socket.avatar} ${socket.username}`, text });
   });
 
   socket.on('sendEmoji', (emoji) => {
-    if (socket.roomCode) io.to(socket.roomCode).emit('displayEmoji', { avatar: socket.avatar, emoji });
+    if (socket.roomCode) io.to(socket.roomCode).emit('displayEmoji', { sender: `${socket.avatar} ${socket.username}`, emoji });
   });
 
   socket.on('disconnect', () => {
@@ -384,7 +394,7 @@ io.on('connection', (socket) => {
         if (room.gameStarted) {
           if (!player.finished) {
             player.finished = true;
-            io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🚪 ${player.avatar} went offline and forfeited!` });
+            io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🚪 ${player.avatar} ${player.name} went offline and forfeited!` });
 
             if (getActivePlayers(room).length <= 1) {
               checkGameOverCondition(room);
