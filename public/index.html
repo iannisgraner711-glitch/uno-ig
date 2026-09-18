@@ -37,7 +37,16 @@
       border-radius: 8px;
       margin-bottom: 8px;
     }
-    .game-title { font-size: clamp(14px, 3.5vw, 20px); font-weight: bold; margin: 0; }
+    .game-title { 
+      font-size: clamp(14px, 3.5vw, 20px); 
+      font-weight: bold; 
+      margin: 0; 
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.2s;
+    }
+    .game-title:hover { opacity: 0.8; }
+    
     .theme-picker {
       padding: 6px 10px;
       font-size: clamp(12px, 2.8vw, 14px);
@@ -167,7 +176,7 @@
 <body>
 
   <header>
-    <div class="game-title">🎴 Uno Game</div>
+    <div class="game-title" onclick="goHome()">🎴 Uno Game</div>
     <select class="theme-picker" onchange="changeTheme(this.value)">
       <option value="dark">🌙 Dark</option>
       <option value="wood">🪵 Wood</option>
@@ -280,6 +289,11 @@
     let isHost = false;
     let selectedCards = [];
     let currentHand = [];
+
+    function goHome() {
+      window.location.hash = '';
+      location.reload();
+    }
 
     function getUrlParams() {
       const hash = window.location.hash.substring(1);
@@ -456,7 +470,7 @@
       document.getElementById('guestWaitingMsg').classList.add('hidden');
     });
 
-    socket.on('errorMsg', (msg) => { alert(msg); window.location.hash = ''; location.reload(); });
+    socket.on('errorMsg', (msg) => { alert(msg); goHome(); });
 
     socket.on('updateLobby', (data) => {
       isHost = (data.hostSessionId === sessionId);
@@ -570,8 +584,7 @@
 
     socket.on('gameOver', (finalLeaderboard) => {
       alert("🎉 Game Over!\n\nRankings:\n" + finalLeaderboard.map((n, i) => `${i + 1}. ${n}`).join('\n'));
-      window.location.hash = '';
-      location.reload();
+      goHome();
     });
   </script>
 </body>

@@ -66,6 +66,10 @@ function handleTurnTimeout(roomCode) {
   if (!room || !room.gameStarted) return;
 
   const currentPlayer = room.players[room.currentTurnIndex];
+  if (!currentPlayer || currentPlayer.finished) {
+    return advanceTurn(room, 0);
+  }
+
   const drawAmount = room.stackedDraw > 0 ? room.stackedDraw : 1;
   room.stackedDraw = 0;
 
@@ -82,9 +86,24 @@ function getActivePlayers(room) {
   return room.players.filter(p => !p.finished);
 }
 
+function checkGameOverCondition(room) {
+  const activePlayers = getActivePlayers(room);
+  if (activePlayers.length <= 1) {
+    if (room.timer) clearInterval(room.timer);
+    if (activePlayers.length === 1) {
+      room.leaderboard.push(activePlayers[0].name);
+    }
+    io.to(room.roomCode).emit('gameOver', room.leaderboard);
+    return true;
+  }
+  return false;
+}
+
 function advanceTurn(room, steps = 1) {
   const total = room.players.length;
   if (total === 0) return;
+
+  if (checkGameOverCondition(room)) return;
 
   for (let i = 0; i < steps; i++) {
     do {
@@ -92,18 +111,21 @@ function advanceTurn(room, steps = 1) {
     } while (room.players[room.currentTurnIndex].finished);
   }
 
-  const nextIdx = (room.currentTurnIndex + room.direction + total) % total;
-  let nextPlayer = room.players[nextIdx];
+  if (room.players[room.currentTurnIndex].finished) {
+    do {
+      room.currentTurnIndex = (room.currentTurnIndex + room.direction + total) % total;
+    } while (room.players[room.currentTurnIndex].finished);
+  }
 
-  while (nextPlayer.finished) {
-    const tempIdx = (room.players.indexOf(nextPlayer) + room.direction + total) % total;
-    nextPlayer = room.players[tempIdx];
+  let nextIdx = (room.currentTurnIndex + room.direction + total) % total;
+  while (room.players[nextIdx].finished) {
+    nextIdx = (nextIdx + room.direction + total) % total;
   }
 
   io.to(room.roomCode).emit('gameState', {
     discardPile: room.discardPile,
     currentTurn: room.players[room.currentTurnIndex].name,
-    nextTurn: nextPlayer.name,
+    nextTurn: room.players[nextIdx].name,
     leaderboard: room.leaderboard,
     direction: room.direction,
     stackedDraw: room.stackedDraw,
@@ -161,10 +183,6 @@ io.on('connection', (socket) => {
       existingPlayer.connected = true;
       if (username) existingPlayer.name = username;
       if (avatar) existingPlayer.avatar = avatar;
-      if (existingPlayer.disconnectTimeout) {
-        clearTimeout(existingPlayer.disconnectTimeout);
-        existingPlayer.disconnectTimeout = null;
-      }
     } else {
       if (room.players.length >= 12) return socket.emit('errorMsg', 'Room full (12 max).');
       if (room.gameStarted) return socket.emit('errorMsg', 'Game in progress.');
@@ -185,10 +203,15 @@ io.on('connection', (socket) => {
     broadcastLobbies();
 
     if (room.gameStarted) {
+      let nextIdx = (room.currentTurnIndex + room.direction + room.players.length) % room.players.length;
+      while (room.players[nextIdx] && room.players[nextIdx].finished) {
+        nextIdx = (nextIdx + room.direction + room.players.length) % room.players.length;
+      }
+
       socket.emit('gameState', {
         discardPile: room.discardPile,
-        currentTurn: room.players[room.currentTurnIndex].name,
-        nextTurn: room.players[(room.currentTurnIndex + room.direction + room.players.length) % room.players.length].name,
+        currentTurn: room.players[room.currentTurnIndex] ? room.players[room.currentTurnIndex].name : '--',
+        nextTurn: room.players[nextIdx] ? room.players[nextIdx].name : '--',
         leaderboard: room.leaderboard,
         direction: room.direction,
         stackedDraw: room.stackedDraw,
@@ -295,7 +318,6 @@ io.on('connection', (socket) => {
       addCardToPile(room, c);
     });
 
-    // AUTOMATIC UNO PENALTY CHECK
     if (player.cards.length === 1) {
       if (!room.unoCalled[player.sessionId]) {
         if (room.deck.length === 0) room.deck = createDeck();
@@ -306,7 +328,6 @@ io.on('connection', (socket) => {
         });
       }
     } else if (player.cards.length > 1) {
-      // RESET UNO CALL STATUS IF PLAYER HAS MORE THAN 1 CARD
       room.unoCalled[player.sessionId] = false;
     }
 
@@ -317,12 +338,7 @@ io.on('connection', (socket) => {
       room.leaderboard.push(player.name);
     }
 
-    if (getActivePlayers(room).length <= 1) {
-      if (room.timer) clearInterval(room.timer);
-      const last = getActivePlayers(room)[0];
-      if (last) room.leaderboard.push(last.name);
-      return io.to(socket.roomCode).emit('gameOver', room.leaderboard);
-    }
+    if (checkGameOverCondition(room)) return;
 
     let skipSteps = 1;
     if (lastCard.value === 'Reverse') room.direction *= -1;
@@ -380,20 +396,35 @@ io.on('connection', (socket) => {
       if (player) {
         player.connected = false;
 
-        player.disconnectTimeout = setTimeout(() => {
-          room.players = room.players.filter(p => p.sessionId !== socket.sessionId);
+        if (room.gameStarted) {
+          if (!player.finished) {
+            player.finished = true;
+            io.to(socket.roomCode).emit('chatMessage', { 
+              sender: 'System', 
+              text: `🚪 ${player.name} went offline and forfeited!` 
+            });
 
-          if (room.players.length > 0) {
-            if (room.hostSessionId === socket.sessionId) {
-              room.hostSessionId = room.players[0].sessionId;
+            const activePlayers = getActivePlayers(room);
+            if (activePlayers.length <= 1) {
+              checkGameOverCondition(room);
+            } else if (room.players[room.currentTurnIndex].sessionId === player.sessionId) {
+              advanceTurn(room, 0);
             }
-            emitLobbyUpdate(socket.roomCode);
-          } else {
-            if (room.timer) clearInterval(room.timer);
-            delete rooms[socket.roomCode];
           }
-          broadcastLobbies();
-        }, 60000);
+        } else {
+          room.players = room.players.filter(p => p.sessionId !== socket.sessionId);
+          if (room.hostSessionId === socket.sessionId && room.players.length > 0) {
+            room.hostSessionId = room.players[0].sessionId;
+          }
+          emitLobbyUpdate(socket.roomCode);
+        }
+
+        if (getActivePlayers(room).length === 0) {
+          if (room.timer) clearInterval(room.timer);
+          delete rooms[socket.roomCode];
+        }
+        
+        broadcastLobbies();
       }
     }
   });
