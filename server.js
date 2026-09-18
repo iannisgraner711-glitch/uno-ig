@@ -26,7 +26,6 @@ function createDeck() {
     for (let j = 0; j < 4; j++) {
       deck.push({ color: 'Wild', value: 'Wild', id: Math.random().toString(36).substr(2, 9) });
       deck.push({ color: 'Wild', value: '+4', id: Math.random().toString(36).substr(2, 9) });
-      deck.push({ color: 'Wild', value: 'Swap', id: Math.random().toString(36).substr(2, 9) });
     }
   }
   return deck.sort(() => Math.random() - 0.5);
@@ -108,7 +107,6 @@ function advanceTurn(room, steps = 1) {
     leaderboard: room.leaderboard,
     direction: room.direction,
     stackedDraw: room.stackedDraw,
-    rules: room.rules,
     gameStarted: room.gameStarted
   });
 
@@ -130,7 +128,6 @@ function emitLobbyUpdate(roomCode) {
   io.to(roomCode).emit('updateLobby', {
     players: room.players,
     hostSessionId: room.hostSessionId,
-    rules: room.rules,
     gameStarted: room.gameStarted
   });
 }
@@ -141,14 +138,13 @@ io.on('connection', (socket) => {
     broadcastLobbies();
   });
 
-  // RECONNECTION AND JOINING HANDLER
   socket.on('joinRoom', ({ username, roomCode, avatar, sessionId }) => {
     if (!rooms[roomCode]) {
       rooms[roomCode] = { 
         hostSessionId: sessionId,
         players: [], gameStarted: false, deck: [], discardPile: [], 
         currentTurnIndex: 0, leaderboard: [], direction: 1, timer: null, timeLeft: 30, roomCode,
-        stackedDraw: 0, rules: { allowStacking: true, jumpIn: true, '70Rule': true }, unoCalled: {}
+        stackedDraw: 0, unoCalled: {}
       };
     }
 
@@ -161,7 +157,6 @@ io.on('connection', (socket) => {
     let existingPlayer = room.players.find(p => p.sessionId === sessionId);
 
     if (existingPlayer) {
-      // RECONNECT LOGIC
       existingPlayer.socketId = socket.id;
       existingPlayer.connected = true;
       if (username) existingPlayer.name = username;
@@ -171,7 +166,6 @@ io.on('connection', (socket) => {
         existingPlayer.disconnectTimeout = null;
       }
     } else {
-      // NEW PLAYER JOINING
       if (room.players.length >= 12) return socket.emit('errorMsg', 'Room full (12 max).');
       if (room.gameStarted) return socket.emit('errorMsg', 'Game in progress.');
 
@@ -190,7 +184,6 @@ io.on('connection', (socket) => {
     emitLobbyUpdate(roomCode);
     broadcastLobbies();
 
-    // RESTORE STATE IF RECONNECTED MID-GAME
     if (room.gameStarted) {
       socket.emit('gameState', {
         discardPile: room.discardPile,
@@ -199,19 +192,9 @@ io.on('connection', (socket) => {
         leaderboard: room.leaderboard,
         direction: room.direction,
         stackedDraw: room.stackedDraw,
-        rules: room.rules,
         gameStarted: room.gameStarted
       });
       socket.emit('yourHand', existingPlayer.cards);
-    }
-  });
-
-  socket.on('updateRules', (newRules) => {
-    const room = rooms[socket.roomCode];
-    if (room && room.hostSessionId === socket.sessionId) {
-      room.rules = { ...room.rules, ...newRules };
-      io.to(socket.roomCode).emit('rulesUpdated', room.rules);
-      emitLobbyUpdate(socket.roomCode);
     }
   });
 
@@ -257,77 +240,63 @@ io.on('connection', (socket) => {
     advanceTurn(room, 0);
   }
 
-  socket.on('playCard', ({ cardId, chosenColor, swapTargetId }) => {
+  // MULTI-CARD STACK PLAYING MECHANIC
+  socket.on('playCards', ({ cardIds, chosenColor }) => {
     const room = rooms[socket.roomCode];
     if (!room || !room.gameStarted) return;
 
     const player = room.players[room.currentTurnIndex];
-    const isTurn = player.sessionId === socket.sessionId;
-    const playerObj = room.players.find(p => p.sessionId === socket.sessionId);
+    if (player.sessionId !== socket.sessionId || player.finished) return;
+    if (!cardIds || cardIds.length === 0) return;
 
-    if (!playerObj || playerObj.finished) return;
-
-    const idx = playerObj.cards.findIndex(c => c.id === cardId);
-    if (idx === -1) return;
-
-    const played = playerObj.cards[idx];
-    const top = room.discardPile[room.discardPile.length - 1];
-
-    const isJumpIn = room.rules.jumpIn && !isTurn && played.color === top.color && played.value === top.value;
-
-    if (!isTurn && !isJumpIn) return;
-
-    if (room.stackedDraw > 0 && room.rules.allowStacking) {
-      if (played.value !== '+2' && played.value !== '+4') return;
+    const playedCards = [];
+    for (let id of cardIds) {
+      const c = player.cards.find(card => card.id === id);
+      if (c) playedCards.push(c);
     }
 
-    const isMatch = played.color === 'Wild' || 
-                    played.color === top.color || 
-                    played.value === top.value || isJumpIn;
+    if (playedCards.length !== cardIds.length) return;
+
+    // VALIDATE MULTI-CARD STACK: ALL CARDS MUST SHARE THE SAME VALUE/NUMBER
+    const targetValue = playedCards[0].value;
+    const allSameValue = playedCards.every(c => c.value === targetValue);
+    if (!allSameValue) return;
+
+    const top = room.discardPile[room.discardPile.length - 1];
+    const firstCard = playedCards[0];
+
+    if (room.stackedDraw > 0) {
+      if (firstCard.value !== '+2' && firstCard.value !== '+4') return;
+    }
+
+    const isMatch = firstCard.color === 'Wild' || 
+                    firstCard.color === top.color || 
+                    firstCard.value === top.value;
 
     if (!isMatch) return;
 
-    if (isJumpIn) {
-      room.currentTurnIndex = room.players.findIndex(p => p.sessionId === socket.sessionId);
-    }
+    // REMOVE PLAYED CARDS FROM PLAYER HAND
+    cardIds.forEach(id => {
+      const idx = player.cards.findIndex(c => c.id === id);
+      if (idx !== -1) player.cards.splice(idx, 1);
+    });
 
-    if (played.color === 'Wild') played.color = chosenColor || 'Red';
-
-    playerObj.cards.splice(idx, 1);
-    addCardToPile(room, played);
-
-    if (room.rules['70Rule']) {
-      if (played.value === '0') {
-        const lastHand = room.players[room.players.length - 1].cards;
-        for (let i = room.players.length - 1; i > 0; i--) {
-          room.players[i].cards = room.players[i - 1].cards;
-        }
-        room.players[0].cards = lastHand;
-        room.players.forEach(p => io.to(p.socketId).emit('yourHand', p.cards));
-      } else if (played.value === '7' && swapTargetId) {
-        const target = room.players.find(p => p.sessionId === swapTargetId);
-        if (target) {
-          const temp = playerObj.cards;
-          playerObj.cards = target.cards;
-          target.cards = temp;
-          io.to(target.socketId).emit('yourHand', target.cards);
-        }
+    // PUSH ALL CARDS TO DISCARD PILE
+    playedCards.forEach((c, index) => {
+      if (c.color === 'Wild') c.color = chosenColor || 'Red';
+      
+      // LAST CARD IN STACK DETERMINES COLOR IF CHOSEN
+      if (index === playedCards.length - 1 && chosenColor && c.color !== 'Wild') {
+        c.color = chosenColor;
       }
-    }
+      addCardToPile(room, c);
+    });
 
-    if (played.value === 'Swap' && swapTargetId) {
-      const target = room.players.find(p => p.sessionId === swapTargetId);
-      if (target) {
-        const temp = playerObj.cards;
-        playerObj.cards = target.cards;
-        target.cards = temp;
-        io.to(target.socketId).emit('yourHand', target.cards);
-      }
-    }
+    const lastCard = playedCards[playedCards.length - 1];
 
-    if (playerObj.cards.length === 0) {
-      playerObj.finished = true;
-      room.leaderboard.push(playerObj.name);
+    if (player.cards.length === 0) {
+      player.finished = true;
+      room.leaderboard.push(player.name);
     }
 
     if (getActivePlayers(room).length <= 1) {
@@ -338,20 +307,15 @@ io.on('connection', (socket) => {
     }
 
     let skipSteps = 1;
-    if (played.value === 'Reverse') room.direction *= -1;
-    if (played.value === 'Skip') skipSteps = 2;
+    if (lastCard.value === 'Reverse') room.direction *= -1;
+    if (lastCard.value === 'Skip') skipSteps = 2;
 
-    if (played.value === '+2' || played.value === '+4') {
-      const penalty = played.value === '+2' ? 2 : 4;
-      if (room.rules.allowStacking) {
-        room.stackedDraw += penalty;
-      } else {
-        room.stackedDraw = penalty;
-        skipSteps = 1;
-      }
+    if (lastCard.value === '+2' || lastCard.value === '+4') {
+      const penalty = (lastCard.value === '+2' ? 2 : 4) * playedCards.length;
+      room.stackedDraw += penalty;
     }
 
-    socket.emit('yourHand', playerObj.cards);
+    socket.emit('yourHand', player.cards);
     advanceTurn(room, skipSteps);
   });
 
@@ -409,7 +373,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // DISCONNECT GRACE PERIOD PREVENTS KICK ON REFRESH
   socket.on('disconnect', () => {
     if (socket.roomCode && rooms[socket.roomCode]) {
       const room = rooms[socket.roomCode];
@@ -418,6 +381,7 @@ io.on('connection', (socket) => {
       if (player) {
         player.connected = false;
 
+        // 60-SECOND RECONNECT WINDOW FOR MOBILE REFRESHES
         player.disconnectTimeout = setTimeout(() => {
           room.players = room.players.filter(p => p.sessionId !== socket.sessionId);
 
@@ -431,7 +395,7 @@ io.on('connection', (socket) => {
             delete rooms[socket.roomCode];
           }
           broadcastLobbies();
-        }, 15000); // 15-second reconnection grace period
+        }, 60000);
       }
     }
   });

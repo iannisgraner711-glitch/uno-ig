@@ -69,10 +69,15 @@
       display: inline-block;
       user-select: none;
       flex-shrink: 0;
-      transition: transform 0.2s ease;
+      transition: transform 0.2s ease, border-color 0.2s ease;
       transform-origin: bottom center;
     }
-    .card:hover { transform: translateY(-20px) scale(1.15) !important; z-index: 100 !important; }
+    .card.selected {
+      border: 4px solid #f1c40f !important;
+      transform: translateY(-25px) scale(1.1) !important;
+      z-index: 150 !important;
+    }
+    .card:hover { transform: translateY(-20px) scale(1.15); z-index: 100; }
     .card .corner { position: absolute; top: 2px; left: 4px; font-size: clamp(9px, 2vw, 12px); font-weight: bold; }
     .card .center-oval {
       width: 65%;
@@ -152,22 +157,10 @@
     }
 
     @keyframes floatUp {
-      0% {
-        opacity: 0;
-        transform: translateY(0) scale(0.5) rotate(0deg);
-      }
-      20% {
-        opacity: 1;
-        transform: translateY(-30px) scale(1.2) rotate(-10deg);
-      }
-      80% {
-        opacity: 1;
-        transform: translateY(-120px) scale(1) rotate(10deg);
-      }
-      100% {
-        opacity: 0;
-        transform: translateY(-180px) scale(0.8) rotate(0deg);
-      }
+      0% { opacity: 0; transform: translateY(0) scale(0.5) rotate(0deg); }
+      20% { opacity: 1; transform: translateY(-30px) scale(1.2) rotate(-10deg); }
+      80% { opacity: 1; transform: translateY(-120px) scale(1) rotate(10deg); }
+      100% { opacity: 0; transform: translateY(-180px) scale(0.8) rotate(0deg); }
     }
   </style>
 </head>
@@ -182,7 +175,6 @@
     </select>
   </header>
 
-  <!-- LOGIN SCREEN -->
   <div id="loginScreen">
     <h2>Join Room</h2>
     <input type="text" id="username" placeholder="Your Name" /><br>
@@ -211,7 +203,6 @@
     <button onclick="openLobbyBrowser()" style="background-color: #17a2b8;">🌐 Browse Lobbies</button>
   </div>
 
-  <!-- LOBBY BROWSER MODAL -->
   <div id="lobbyBrowserModal" class="modal-overlay hidden">
     <div class="modal-card">
       <h3>Available Lobbies</h3>
@@ -220,17 +211,9 @@
     </div>
   </div>
 
-  <!-- LOBBY SCREEN -->
   <div id="lobbyScreen" class="hidden">
     <h2 id="roomTitle"></h2>
     <h3 id="countdownDisplay" style="color:#f1c40f;"></h3>
-    
-    <div style="background: var(--panel-bg); padding: 10px; border-radius: 8px; margin: 10px auto; max-width: 320px;">
-      <h4>⚙️ House Rules</h4>
-      <label><input type="checkbox" id="ruleStacking" onchange="updateRules()"> Allow +2/+4 Stacking</label><br>
-      <label><input type="checkbox" id="ruleJumpIn" onchange="updateRules()"> Allow Jump-In</label><br>
-      <label><input type="checkbox" id="rule70" onchange="updateRules()"> 7-0 Rule</label>
-    </div>
 
     <h3>Players:</h3>
     <ul id="playerList" style="list-style:none; padding:0;"></ul>
@@ -243,7 +226,6 @@
     </div>
   </div>
 
-  <!-- GAME SCREEN -->
   <div id="gameScreen" class="hidden" style="display: flex; flex-direction: column; flex-grow: 1;">
     <div class="turn-bar">
       Current: <span id="currentTurn" style="color:#2ecc71;">--</span><br>
@@ -260,6 +242,7 @@
     </div>
 
     <div>
+      <button id="playSelectedBtn" onclick="submitSelectedCards()" style="background-color: #28a745;" class="hidden">Play Selected Stack</button>
       <button onclick="drawCard()" style="background-color: #e67e22;">Draw Card</button>
       <button id="unoBtn" onclick="callUno()" style="background-color: #e74c3c;">🚨 UNO!</button>
       <button onclick="openCatchModal()" style="background-color: #fd7e14;">🎯 Catch!</button>
@@ -280,10 +263,9 @@
     </div>
   </div>
 
-  <!-- COLOR PICKER MODAL -->
   <div id="colorModal" class="modal-overlay hidden">
     <div class="modal-card" style="text-align: center;">
-      <h3>Select Wild Color</h3>
+      <h3>Select Final Card Color</h3>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; height: 140px;">
         <button class="Red" onclick="selectWildColor('Red')">Red</button>
         <button class="Blue" onclick="selectWildColor('Blue')">Blue</button>
@@ -293,15 +275,6 @@
     </div>
   </div>
 
-  <!-- SWAP PLAYER TARGET MODAL -->
-  <div id="swapModal" class="modal-overlay hidden">
-    <div class="modal-card">
-      <h3>Select Target Player</h3>
-      <div id="swapPlayerList"></div>
-    </div>
-  </div>
-
-  <!-- CATCH UNO MODAL -->
   <div id="catchModal" class="modal-overlay hidden">
     <div class="modal-card">
       <h3>Who forgot to call UNO?</h3>
@@ -313,18 +286,26 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    let pendingWildCardId = null;
-    let pendingSwapCardId = null;
     let activePlayersList = [];
     let isHost = false;
-    let is70Enabled = false;
+    let selectedCards = [];
+    let currentHand = [];
 
-    // SESSION IDENTIFIER FOR PERSISTENT RECONNECTS
-    let sessionId = localStorage.getItem('uno_session_id');
+    // URL PARSING FOR RECONNECTION DEEP-LINK
+    function getUrlParams() {
+      const hash = window.location.hash.substring(1);
+      const parts = hash.split('?');
+      const room = parts[0] || '';
+      const params = new URLSearchParams(parts[1] || '');
+      return { room, sessionId: params.get('session') };
+    }
+
+    const urlData = getUrlParams();
+    let sessionId = urlData.sessionId || localStorage.getItem('uno_session_id');
     if (!sessionId) {
       sessionId = 'sess_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('uno_session_id', sessionId);
     }
+    localStorage.setItem('uno_session_id', sessionId);
 
     function changeTheme(theme) {
       document.body.className = '';
@@ -342,8 +323,8 @@
       localStorage.setItem('uno_username', username);
       localStorage.setItem('uno_avatar', avatar);
 
-      // UPDATE URL HASH WITHOUT REFRESHING PAGE
-      window.location.hash = roomCode;
+      // SAVE ROOM AND SESSION IDENTIFIER INTO URL HASH
+      window.location.hash = `${roomCode}?session=${sessionId}`;
 
       socket.emit('joinRoom', { username, roomCode, avatar, sessionId });
 
@@ -352,7 +333,6 @@
       document.getElementById('roomTitle').innerText = "Room: " + roomCode;
     }
 
-    // AUTO RECONNECT IF URL CONTAINS A ROOM HASH
     window.addEventListener('load', () => {
       const savedName = localStorage.getItem('uno_username');
       const savedAvatar = localStorage.getItem('uno_avatar');
@@ -360,9 +340,8 @@
       if (savedName) document.getElementById('username').value = savedName;
       if (savedAvatar) document.getElementById('avatarSelect').value = savedAvatar;
 
-      const roomHash = window.location.hash.substring(1).trim();
-      if (roomHash) {
-        document.getElementById('roomCode').value = roomHash;
+      if (urlData.room) {
+        document.getElementById('roomCode').value = urlData.room;
         joinDirect();
       }
     });
@@ -396,20 +375,15 @@
       joinDirect();
     }
 
-    function updateRules() {
-      if (!isHost) return;
-      socket.emit('updateRules', {
-        allowStacking: document.getElementById('ruleStacking').checked,
-        jumpIn: document.getElementById('ruleJumpIn').checked,
-        '70Rule': document.getElementById('rule70').checked
-      });
-    }
-
     function requestStart() {
       if (isHost) socket.emit('requestStartGame');
     }
 
-    function drawCard() { socket.emit('drawCard'); }
+    function drawCard() { 
+      selectedCards = [];
+      updateHandDisplay();
+      socket.emit('drawCard'); 
+    }
     
     function callUno() { 
       socket.emit('callUno'); 
@@ -421,49 +395,71 @@
       setTimeout(() => unoBtn.style.backgroundColor = '#e74c3c', 2000);
     });
 
-    function handleCardClick(cardId, color, val) {
-      if (val === 'Swap' || (val === '7' && is70Enabled)) {
-        pendingSwapCardId = cardId;
-        openSwapModal(color);
-      } else if (color === 'Wild') {
-        pendingWildCardId = cardId;
-        document.getElementById('colorModal').classList.remove('hidden');
+    function handleCardClick(cardId) {
+      const clickedCard = currentHand.find(c => c.id === cardId);
+      if (!clickedCard) return;
+
+      const index = selectedCards.indexOf(cardId);
+      
+      if (index > -1) {
+        selectedCards.splice(index, 1);
       } else {
-        socket.emit('playCard', { cardId });
+        if (selectedCards.length > 0) {
+          const firstSelected = currentHand.find(c => c.id === selectedCards[0]);
+          if (firstSelected && firstSelected.value !== clickedCard.value) {
+            selectedCards = [cardId];
+          } else {
+            selectedCards.push(cardId);
+          }
+        } else {
+          selectedCards.push(cardId);
+        }
       }
+
+      updateHandDisplay();
     }
 
-    function openSwapModal(color) {
-      const container = document.getElementById('swapPlayerList');
-      container.innerHTML = activePlayersList
-        .filter(p => p.sessionId !== sessionId)
-        .map(p => `<button onclick="confirmSwap('${p.sessionId}', '${color}')" style="width:100%; margin:4px 0;">Swap with ${p.avatar} ${p.name}</button>`)
-        .join('');
-      document.getElementById('swapModal').classList.remove('hidden');
-    }
-
-    function confirmSwap(targetSessionId, color) {
-      document.getElementById('swapModal').classList.add('hidden');
-      if (color === 'Wild') {
-        pendingWildCardId = pendingSwapCardId;
-        document.getElementById('colorModal').classList.remove('hidden');
-        window.tempSwapTarget = targetSessionId;
+    function updateHandDisplay() {
+      const btn = document.getElementById('playSelectedBtn');
+      if (selectedCards.length > 0) {
+        btn.classList.remove('hidden');
+        btn.innerText = `Play Selected (${selectedCards.length})`;
       } else {
-        socket.emit('playCard', { cardId: pendingSwapCardId, swapTargetId: targetSessionId });
+        btn.classList.add('hidden');
+      }
+
+      currentHand.forEach(c => {
+        const el = document.getElementById(`card-${c.id}`);
+        if (el) {
+          if (selectedCards.includes(c.id)) {
+            el.classList.add('selected');
+          } else {
+            el.classList.remove('selected');
+          }
+        }
+      });
+    }
+
+    function submitSelectedCards() {
+      if (selectedCards.length === 0) return;
+
+      const lastCardId = selectedCards[selectedCards.length - 1];
+      const lastCard = currentHand.find(c => c.id === lastCardId);
+
+      if (lastCard && (lastCard.color === 'Wild' || selectedCards.length > 1)) {
+        document.getElementById('colorModal').classList.remove('hidden');
+      } else {
+        socket.emit('playCards', { cardIds: selectedCards });
+        selectedCards = [];
+        updateHandDisplay();
       }
     }
 
     function selectWildColor(chosenColor) {
       document.getElementById('colorModal').classList.add('hidden');
-      if (pendingWildCardId) {
-        socket.emit('playCard', { 
-          cardId: pendingWildCardId, 
-          chosenColor, 
-          swapTargetId: window.tempSwapTarget 
-        });
-        pendingWildCardId = null;
-        window.tempSwapTarget = null;
-      }
+      socket.emit('playCards', { cardIds: selectedCards, chosenColor });
+      selectedCards = [];
+      updateHandDisplay();
     }
 
     function openCatchModal() {
@@ -496,17 +492,6 @@
         <li>${p.avatar} ${p.name} ${p.sessionId === data.hostSessionId ? '<span class="host-badge">HOST</span>' : ''}</li>
       `).join('');
 
-      document.getElementById('ruleStacking').disabled = !isHost;
-      document.getElementById('ruleJumpIn').disabled = !isHost;
-      document.getElementById('rule70').disabled = !isHost;
-
-      if (data.rules) {
-        document.getElementById('ruleStacking').checked = !!data.rules.allowStacking;
-        document.getElementById('ruleJumpIn').checked = !!data.rules.jumpIn;
-        document.getElementById('rule70').checked = !!data.rules['70Rule'];
-        is70Enabled = !!data.rules['70Rule'];
-      }
-
       if (isHost) {
         document.getElementById('hostControls').classList.remove('hidden');
         document.getElementById('guestWaitingMsg').classList.add('hidden');
@@ -523,14 +508,14 @@
     function getCardGraphic(val) {
       if (val === 'Reverse') return '⇄';
       if (val === 'Skip') return '⊘';
-      if (val === 'Swap') return '🔄';
       return val;
     }
 
     function createCardMarkup(c, zIndex = 0, styleStr = '', onClickAttr = '', cardId = '') {
       const symbol = getCardGraphic(c.value);
+      const isSelected = selectedCards.includes(cardId) ? 'selected' : '';
       return `
-        <div id="card-${cardId}" class="card ${c.color}" style="z-index:${zIndex}; ${styleStr}" ${onClickAttr}>
+        <div id="card-${cardId}" class="card ${c.color} ${isSelected}" style="z-index:${zIndex}; ${styleStr}" ${onClickAttr}>
           <div class="corner">${symbol}</div>
           <div class="center-oval"><span class="center-number">${symbol}</span></div>
         </div>
@@ -541,10 +526,6 @@
       document.getElementById('loginScreen').classList.add('hidden');
       document.getElementById('lobbyScreen').classList.add('hidden');
       document.getElementById('gameScreen').classList.remove('hidden');
-
-      if (data.rules) {
-        is70Enabled = !!data.rules['70Rule'];
-      }
 
       document.getElementById('currentTurn').innerText = data.currentTurn;
       document.getElementById('nextTurn').innerText = data.nextTurn;
@@ -565,6 +546,10 @@
     });
 
     socket.on('yourHand', (cards) => {
+      currentHand = cards;
+      selectedCards = selectedCards.filter(id => currentHand.some(c => c.id === id));
+      updateHandDisplay();
+
       const handDiv = document.getElementById('hand');
       const total = cards.length;
 
@@ -576,7 +561,7 @@
         const yOffset = Math.abs(angle) * 0.3;
 
         const styleStr = `margin-left: ${idx === 0 ? 0 : overlapMargin}px; transform: rotate(${angle}deg) translateY(${yOffset}px);`;
-        const clickCode = `onclick="handleCardClick('${c.id}', '${c.color}', '${c.value}')"`;
+        const clickCode = `onclick="handleCardClick('${c.id}')"`;
         
         return createCardMarkup(c, idx, styleStr, clickCode, c.id);
       }).join('');
