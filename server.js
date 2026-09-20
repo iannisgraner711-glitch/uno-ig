@@ -2,134 +2,191 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
+const path = require('path');
 
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 const rooms = {};
 
-// Helper: Generate Deck based on game modes
-function createDeck(moreCards = false) {
+function createDeck(moreCardsEnabled = false) {
   const colors = ['Red', 'Blue', 'Green', 'Yellow'];
-  const values = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Skip', 'Reverse', '+2'];
-  let deck = [];
+  const values = ['0','1','2','3','4','5','6','7','8','9','Skip','Reverse','+2'];
+  const deck = [];
 
-  colors.forEach(color => {
-    values.forEach(val => {
-      deck.push({ color, value: val, id: Math.random().toString(36).substr(2, 9) });
-      if (val !== '0') {
+  for (let i = 0; i < 2; i++) {
+    for (let color of colors) {
+      for (let val of values) {
         deck.push({ color, value: val, id: Math.random().toString(36).substr(2, 9) });
       }
-    });
-  });
-
-  for (let i = 0; i < 4; i++) {
-    deck.push({ color: 'Wild', value: 'Wild', id: Math.random().toString(36).substr(2, 9) });
-    deck.push({ color: 'Wild', value: '+4', id: Math.random().toString(36).substr(2, 9) });
-  }
-
-  // Rare & Mythic Cards
-  if (moreCards) {
-    const rareCards = ['Roulette', 'Spy', 'Shield', 'TaxCollector'];
-    rareCards.forEach(value => {
-      for (let i = 0; i < 2; i++) {
-        deck.push({ color: 'Wild', value, rarity: 'rare', id: Math.random().toString(36).substr(2, 9) });
-      }
-    });
-
-    const mythicCards = ['+25', 'Reset', 'Domain', 'Reflect'];
-    mythicCards.forEach(value => {
-      deck.push({ color: 'Wild', value, rarity: 'mythic', id: Math.random().toString(36).substr(2, 9) });
-    });
-  }
-
-  // Shuffle Deck
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
-
-  return deck;
-}
-
-// Helper: Draw Card for Player with auto-reshuffle
-function drawCardForPlayer(room, player) {
-  if (room.deck.length === 0) {
-    if (room.discardPile.length <= 1) return;
-    const top = room.discardPile.pop();
-    room.deck = room.discardPile.map(c => ({
-      ...c,
-      color: c.originalColor || c.color
-    }));
-    room.discardPile = [top];
-
-    for (let i = room.deck.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [room.deck[i], room.deck[j]] = [room.deck[j], room.deck[i]];
+    }
+    for (let j = 0; j < 4; j++) {
+      deck.push({ color: 'Wild', value: 'Wild', id: Math.random().toString(36).substr(2, 9) });
+      deck.push({ color: 'Wild', value: '+4', id: Math.random().toString(36).substr(2, 9) });
     }
   }
 
-  const card = room.deck.pop();
-  if (card) player.cards.push(card);
-}
-
-// Helper: Add Card to Discard Pile
-function addCardToPile(room, card) {
-  room.discardPile.push({
-    ...card,
-    rot: Math.floor(Math.random() * 60) - 30,
-    offsetX: Math.floor(Math.random() * 20) - 10,
-    offsetY: Math.floor(Math.random() * 20) - 10
-  });
-}
-
-// Helper: Get Active Non-Finished Connected Players
-function getActivePlayers(room) {
-  return room.players.filter(p => !p.finished && p.connected !== false);
-}
-
-// Helper: Advance Turn
-function advanceTurn(room, skipSteps = 1) {
-  const active = getActivePlayers(room);
-  if (active.length <= 1) {
-    checkGameOverCondition(room);
-    return;
+  if (moreCardsEnabled) {
+    // Custom Rare Cards added into deck
+    const customTypes = ['Roulette', 'Spy', 'Shield', 'DoublePlay', 'TaxCollector'];
+    customTypes.forEach(type => {
+      for (let k = 0; k < 2; k++) {
+        deck.push({ color: 'Wild', value: type, rarity: 'rare', id: Math.random().toString(36).substr(2, 9) });
+      }
+    });
   }
+
+  return deck.sort(() => Math.random() - 0.5);
+}
+
+function broadcastLobbies() {
+  const list = Object.keys(rooms)
+    .filter(code => {
+      const r = rooms[code];
+      return !r.isPrivate && !r.gameStarted && r.players.length < 12;
+    })
+    .map(code => ({
+      code,
+      players: rooms[code].players.length,
+      hasPassword: !!rooms[code].password,
+      red7Rule: rooms[code].red7Rule,
+      moreCards: rooms[code].moreCards
+    }));
+
+  io.emit('lobbyList', list);
+}
+
+function startTurnTimer(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return;
+
+  if (room.timer) clearInterval(room.timer);
+  room.timeLeft = 30;
+
+  io.to(roomCode).emit('timerUpdate', room.timeLeft);
+
+  room.timer = setInterval(() => {
+    room.timeLeft--;
+    io.to(roomCode).emit('timerUpdate', room.timeLeft);
+
+    if (room.timeLeft <= 0) {
+      clearInterval(room.timer);
+      handleTurnTimeout(roomCode);
+    }
+  }, 1000);
+}
+
+function handleTurnTimeout(roomCode) {
+  const room = rooms[roomCode];
+  if (!room || !room.gameStarted) return;
+
+  const currentPlayer = room.players[room.currentTurnIndex];
+  if (!currentPlayer || currentPlayer.finished) return advanceTurn(room, 0);
+
+  const drawAmount = room.stackedDraw > 0 ? room.stackedDraw : 1;
+  room.stackedDraw = 0;
+
+  for (let i = 0; i < drawAmount; i++) {
+    drawCardForPlayer(room, currentPlayer);
+  }
+
+  io.to(currentPlayer.socketId).emit('yourHand', currentPlayer.cards);
+  advanceTurn(room, 1);
+}
+
+function drawCardForPlayer(room, player) {
+  // 0.0001% mythic card draw roll if More Cards setting is ON
+  if (room.moreCards && Math.random() < 0.00001) {
+    const mythics = [
+      { color: 'Wild', value: '+25', rarity: 'mythic' },
+      { color: 'Wild', value: 'Reset', rarity: 'mythic' },
+      { color: 'Wild', value: 'Domain', rarity: 'mythic' },
+      { color: 'Wild', value: 'Reflect', rarity: 'mythic' }
+    ];
+    const picked = mythics[Math.floor(Math.random() * mythics.length)];
+    const card = { ...picked, id: Math.random().toString(36).substr(2, 9) };
+    player.cards.push(card);
+    io.to(room.roomCode).emit('chatMessage', {
+      sender: '🌟 MYTHIC DRAW!',
+      text: `${player.avatar} ${player.name} pulled a 0.0001% MYTHIC ${card.value} CARD!`
+    });
+    return card;
+  }
+
+  if (room.deck.length === 0) room.deck = createDeck(room.moreCards);
+  const c = room.deck.pop();
+  player.cards.push(c);
+  return c;
+}
+
+function getActivePlayers(room) {
+  return room.players.filter(p => !p.finished);
+}
+
+function checkGameOverCondition(room) {
+  const activePlayers = getActivePlayers(room);
+  if (activePlayers.length <= 1) {
+    if (room.timer) clearInterval(room.timer);
+    if (activePlayers.length === 1) {
+      room.leaderboard.push({
+        sessionId: activePlayers[0].sessionId,
+        name: `${activePlayers[0].avatar} ${activePlayers[0].name}`
+      });
+    }
+    io.to(room.roomCode).emit('gameOver', room.leaderboard);
+    return true;
+  }
+  return false;
+}
+
+function advanceTurn(room, steps = 1) {
+  const total = room.players.length;
+  if (total === 0 || checkGameOverCondition(room)) return;
 
   if (room.domainTurns > 0) {
     room.domainTurns--;
-    if (room.domainTurns <= 0) room.domainColor = null;
+    if (room.domainTurns === 0) {
+      room.domainColor = null;
+      io.to(room.roomCode).emit('chatMessage', { sender: 'System', text: '🌀 Domain Expansion lock has ended!' });
+    }
   }
 
-  room.players.forEach(p => {
-    if (p.spyTurns > 0) p.spyTurns--;
-  });
-
-  let nextIdx = room.currentTurnIndex;
-  for (let i = 0; i < skipSteps; i++) {
+  for (let i = 0; i < steps; i++) {
     do {
-      nextIdx = (nextIdx + room.direction + room.players.length) % room.players.length;
-    } while (room.players[nextIdx].finished || room.players[nextIdx].connected === false);
+      room.currentTurnIndex = (room.currentTurnIndex + room.direction + total) % total;
+    } while (room.players[room.currentTurnIndex].finished);
   }
 
-  room.currentTurnIndex = nextIdx;
-  const currPlayer = room.players[room.currentTurnIndex];
+  let nextIdx = (room.currentTurnIndex + room.direction + total) % total;
+  while (room.players[nextIdx].finished) {
+    nextIdx = (nextIdx + room.direction + total) % total;
+  }
 
-  let nextTurnIdx = nextIdx;
-  do {
-    nextTurnIdx = (nextTurnIdx + room.direction + room.players.length) % room.players.length;
-  } while (room.players[nextTurnIdx].finished || room.players[nextTurnIdx].connected === false);
+  const currP = room.players[room.currentTurnIndex];
+  const nextP = room.players[nextIdx];
 
-  const nextPlayer = room.players[nextTurnIdx];
+  // Manage Spy visibility expiration
+  room.players.forEach(p => {
+    if (p.spyTurns > 0) {
+      p.spyTurns--;
+      if (p.spyTurns === 0) {
+        io.to(room.roomCode).emit('chatMessage', { sender: 'System', text: `👁️ ${p.avatar} ${p.name}'s hand is hidden again.` });
+      }
+    }
+  });
 
   const revealedPlayers = room.players
     .filter(p => p.spyTurns > 0 && !p.finished)
-    .map(p => ({ name: p.name, cards: p.cards }));
+    .map(p => ({ sessionId: p.sessionId, cards: p.cards }));
 
-  io.to(room.code).emit('gameState', {
+  io.to(room.roomCode).emit('gameState', {
     discardPile: room.discardPile,
-    currentTurn: `${currPlayer.avatar} ${currPlayer.name}`,
-    currentSessionId: currPlayer.sessionId,
-    nextTurn: `${nextPlayer.avatar} ${nextPlayer.name}`,
+    currentTurn: `${currP.avatar} ${currP.name}`,
+    currentSessionId: currP.sessionId,
+    nextTurn: `${nextP.avatar} ${nextP.name}`,
     leaderboard: room.leaderboard,
     direction: room.direction,
     stackedDraw: room.stackedDraw,
@@ -140,109 +197,81 @@ function advanceTurn(room, skipSteps = 1) {
     domainTurns: room.domainTurns,
     revealedPlayers
   });
+
+  startTurnTimer(room.roomCode);
 }
 
-// Helper: Resolve Red 7 Speed Penalties
+function addCardToPile(room, card) {
+  const rot = Math.floor(Math.random() * 40) - 20;
+  const offsetX = Math.floor(Math.random() * 16) - 8;
+  const offsetY = Math.floor(Math.random() * 16) - 8;
+
+  room.discardPile.push({ ...card, rot, offsetX, offsetY });
+  if (room.discardPile.length > 6) room.discardPile.shift();
+}
+
+function emitLobbyUpdate(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return;
+  io.to(roomCode).emit('updateLobby', {
+    players: room.players,
+    hostSessionId: room.hostSessionId,
+    gameStarted: room.gameStarted,
+    isPrivate: room.isPrivate,
+    hasPassword: !!room.password,
+    red7Rule: room.red7Rule,
+    moreCards: room.moreCards
+  });
+}
+
 function resolveRed7Penalty(roomCode) {
   const room = rooms[roomCode];
   if (!room || !room.red7Active) return;
 
   room.red7Active = false;
+  const activePlayers = getActivePlayers(room);
+  
+  const missing = activePlayers.filter(p => !room.red7Responded.includes(p.sessionId));
+
+  let loser = null;
+  if (missing.length > 0) {
+    loser = missing[0];
+  } else if (room.red7Responded.length > 0) {
+    const loserSessionId = room.red7Responded[room.red7Responded.length - 1];
+    loser = room.players.find(p => p.sessionId === loserSessionId);
+  }
+
+  if (loser) {
+    for (let i = 0; i < 7; i++) {
+      drawCardForPlayer(room, loser);
+    }
+    io.to(loser.socketId).emit('yourHand', loser.cards);
+    io.to(roomCode).emit('chatMessage', { 
+      sender: 'System', 
+      text: `🔥 RED 7 PENALTY! ${loser.avatar} ${loser.name} extended hand LAST and drew 7 cards!` 
+    });
+  }
+
   io.to(roomCode).emit('red7Ended');
-
-  const active = getActivePlayers(room);
-  const missed = active.filter(p => !room.red7Responded.includes(p.sessionId));
-
-  missed.forEach(p => {
-    drawCardForPlayer(room, p);
-    io.to(p.socketId).emit('yourHand', p.cards);
-    io.to(p.socketId).emit('handPenaltyMsg', '⚠️ Too slow on Red 7! +1 Card Penalty!');
-  });
-
-  if (room.red7Responded.length > 0) {
-    const slowestSessionId = room.red7Responded[room.red7Responded.length - 1];
-    const slowestPlayer = room.players.find(p => p.sessionId === slowestSessionId);
-    if (slowestPlayer && active.length > 1) {
-      drawCardForPlayer(room, slowestPlayer);
-      io.to(slowestPlayer.socketId).emit('yourHand', slowestPlayer.cards);
-      io.to(slowestPlayer.socketId).emit('handPenaltyMsg', '⚠️ Last to extend hand on Red 7! +1 Card Penalty!');
-    }
-  }
-}
-
-// Helper: Check Game Over
-function checkGameOverCondition(room) {
-  const active = getActivePlayers(room);
-  if (active.length <= 1) {
-    if (active.length === 1) {
-      room.leaderboard.push({ sessionId: active[0].sessionId, name: `${active[0].avatar} ${active[0].name}` });
-    }
-    room.gameStarted = false;
-    io.to(room.code).emit('gameOver', room.leaderboard);
-    return true;
-  }
-  return false;
-}
-
-// Helper: Emit Lobby Update
-function emitLobbyUpdate(roomCode) {
-  const room = rooms[roomCode];
-  if (!room) return;
-
-  io.to(roomCode).emit('updateLobby', {
-    hostSessionId: room.hostSessionId,
-    red7Rule: room.red7Rule,
-    moreCards: room.moreCards,
-    players: room.players.map(p => ({
-      name: p.name,
-      avatar: p.avatar,
-      sessionId: p.sessionId
-    }))
-  });
-}
-
-// Helper: Broadcast Lobby List
-function broadcastLobbies() {
-  const lobbyList = Object.keys(rooms)
-    .filter(code => !rooms[code].isPrivate && !rooms[code].gameStarted)
-    .map(code => ({
-      code,
-      hasPassword: !!rooms[code].password,
-      players: rooms[code].players.length,
-      red7Rule: rooms[code].red7Rule,
-      moreCards: rooms[code].moreCards
-    }));
-
-  io.emit('lobbyList', lobbyList);
 }
 
 io.on('connection', (socket) => {
   socket.on('getLobbies', () => broadcastLobbies());
 
-  socket.on('joinRoom', ({ username, roomCode, avatar, sessionId, isPrivate, password }) => {
-    socket.username = username;
-    socket.roomCode = roomCode;
-    socket.avatar = avatar || '😀';
-    socket.sessionId = sessionId;
-
-    socket.join(roomCode);
-
+  socket.on('joinRoom', ({ username, roomCode, avatar, sessionId, isPrivate, password, red7Rule, moreCards }) => {
     if (!rooms[roomCode]) {
-      rooms[roomCode] = {
-        code: roomCode,
+      rooms[roomCode] = { 
         hostSessionId: sessionId,
-        players: [],
-        deck: [],
-        discardPile: [],
-        currentTurnIndex: 0,
-        direction: 1,
-        gameStarted: false,
-        stackedDraw: 0,
-        leaderboard: [],
-        red7Rule: false,
-        moreCards: false,
+        players: [], gameStarted: false, deck: [], discardPile: [], 
+        currentTurnIndex: 0, leaderboard: [], direction: 1, timer: null, timeLeft: 30, roomCode,
+        stackedDraw: 0, unoCalled: {},
         isPrivate: !!isPrivate,
         password: password || null,
+        red7Rule: red7Rule !== undefined ? red7Rule : true,
+        moreCards: moreCards !== undefined ? moreCards : true,
+        red7Active: false,
+        red7Responded: [],
+        red7Timer: null,
         domainColor: null,
         domainTurns: 0
       };
@@ -250,29 +279,32 @@ io.on('connection', (socket) => {
 
     const room = rooms[roomCode];
 
-    if (room.password && room.password !== password && room.hostSessionId !== sessionId) {
+    if (room.password && room.hostSessionId !== sessionId && room.password !== password) {
       return socket.emit('errorMsg', 'Incorrect room password!');
     }
 
+    const finalName = username ? username.trim() : "Player_" + Math.floor(Math.random() * 899 + 100);
+
+    socket.join(roomCode);
+    socket.roomCode = roomCode;
+    socket.username = finalName;
+    socket.avatar = avatar || '🤠';
+    socket.sessionId = sessionId;
+
     let existingPlayer = room.players.find(p => p.sessionId === sessionId);
+
     if (existingPlayer) {
       existingPlayer.socketId = socket.id;
       existingPlayer.connected = true;
-      existingPlayer.name = username;
-      existingPlayer.avatar = avatar;
+      existingPlayer.name = socket.username;
+      existingPlayer.avatar = socket.avatar;
     } else {
-      if (room.gameStarted) {
-        return socket.emit('errorMsg', 'Game already in progress!');
-      }
-      existingPlayer = {
-        socketId: socket.id,
-        sessionId,
-        name: username,
-        avatar,
-        cards: [],
-        finished: false,
-        spyTurns: 0,
-        connected: true
+      if (room.players.length >= 12) return socket.emit('errorMsg', 'Room full (12 max).');
+      if (room.gameStarted) return socket.emit('errorMsg', 'Game in progress.');
+
+      existingPlayer = { 
+        sessionId, socketId: socket.id, name: socket.username, avatar: socket.avatar, 
+        cards: [], finished: false, connected: true, spyTurns: 0 
       };
       room.players.push(existingPlayer);
     }
@@ -422,6 +454,7 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Debug Give Card Command handler
   socket.on('debugGiveCard', ({ color, value, rarity }) => {
     const room = rooms[socket.roomCode];
     if (!room || !room.gameStarted) return;
@@ -453,10 +486,12 @@ io.on('connection', (socket) => {
     const top = room.discardPile[room.discardPile.length - 1];
     const firstCard = playedCards[0];
 
+    // Domain Expansion color enforcement check
     if (room.domainColor && firstCard.color !== 'Wild' && firstCard.color !== room.domainColor) {
       return socket.emit('chatMessage', { sender: 'System', text: `🌀 Domain Active! You must play ${room.domainColor}!` });
     }
 
+    // Shield Counter check against stacked draws
     if (firstCard.value === 'Shield' && room.stackedDraw > 0) {
       cardIds.forEach(id => {
         const idx = player.cards.findIndex(c => c.id === id);
@@ -499,36 +534,11 @@ io.on('connection', (socket) => {
       room.stackedDraw += 25 * playedCards.length;
       io.to(socket.roomCode).emit('chatMessage', { sender: '💣 NUKE', text: `BOOM! $+25$ Nuke played! Stack total: $+${room.stackedDraw}$` });
     } else if (firstCard.value === 'Reset') {
-      // FIXED GOLDEN RESET LOGIC
       io.to(socket.roomCode).emit('chatMessage', { sender: '👑 GOLDEN RESET', text: 'All hands discarded and reshuffled! Everyone draws 7 fresh cards!' });
-      
-      // 1. Collect all cards from active non-finished players back into the deck
       room.players.forEach(p => {
         if (!p.finished) {
-          room.deck.push(...p.cards);
           p.cards = [];
-        }
-      });
-
-      // 2. Return discard pile (except top card) back to deck
-      if (room.discardPile.length > 1) {
-        const topCard = room.discardPile.pop();
-        room.deck.push(...room.discardPile);
-        room.discardPile = [topCard];
-      }
-
-      // 3. Reshuffle the complete deck
-      for (let i = room.deck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [room.deck[i], room.deck[j]] = [room.deck[j], room.deck[i]];
-      }
-
-      // 4. Deal 7 fresh cards to everyone
-      room.players.forEach(p => {
-        if (!p.finished) {
-          for (let i = 0; i < 7; i++) {
-            drawCardForPlayer(room, p);
-          }
+          for (let i = 0; i < 7; i++) drawCardForPlayer(room, p);
           io.to(p.socketId).emit('yourHand', p.cards);
         }
       });
@@ -630,6 +640,7 @@ io.on('connection', (socket) => {
   socket.on('sendChat', (text) => {
     if (!socket.roomCode) return;
 
+    // Secret Debug Menu Command
     if (text.trim() === '/give 67') {
       return socket.emit('openDebugMenu');
     }
