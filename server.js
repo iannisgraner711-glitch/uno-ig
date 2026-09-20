@@ -12,7 +12,7 @@ app.get('/', (req, res) => {
 
 const rooms = {};
 
-function createDeck() {
+function createDeck(moreCardsEnabled = false) {
   const colors = ['Red', 'Blue', 'Green', 'Yellow'];
   const values = ['0','1','2','3','4','5','6','7','8','9','Skip','Reverse','+2'];
   const deck = [];
@@ -28,6 +28,17 @@ function createDeck() {
       deck.push({ color: 'Wild', value: '+4', id: Math.random().toString(36).substr(2, 9) });
     }
   }
+
+  if (moreCardsEnabled) {
+    // Custom Rare Cards added into deck
+    const customTypes = ['Roulette', 'Spy', 'Shield', 'DoublePlay', 'TaxCollector'];
+    customTypes.forEach(type => {
+      for (let k = 0; k < 2; k++) {
+        deck.push({ color: 'Wild', value: type, rarity: 'rare', id: Math.random().toString(36).substr(2, 9) });
+      }
+    });
+  }
+
   return deck.sort(() => Math.random() - 0.5);
 }
 
@@ -41,7 +52,8 @@ function broadcastLobbies() {
       code,
       players: rooms[code].players.length,
       hasPassword: !!rooms[code].password,
-      red7Rule: rooms[code].red7Rule
+      red7Rule: rooms[code].red7Rule,
+      moreCards: rooms[code].moreCards
     }));
 
   io.emit('lobbyList', list);
@@ -78,12 +90,36 @@ function handleTurnTimeout(roomCode) {
   room.stackedDraw = 0;
 
   for (let i = 0; i < drawAmount; i++) {
-    if (room.deck.length === 0) room.deck = createDeck();
-    currentPlayer.cards.push(room.deck.pop());
+    drawCardForPlayer(room, currentPlayer);
   }
 
   io.to(currentPlayer.socketId).emit('yourHand', currentPlayer.cards);
   advanceTurn(room, 1);
+}
+
+function drawCardForPlayer(room, player) {
+  // 0.0001% mythic card draw roll if More Cards setting is ON
+  if (room.moreCards && Math.random() < 0.00001) {
+    const mythics = [
+      { color: 'Wild', value: '+25', rarity: 'mythic' },
+      { color: 'Wild', value: 'Reset', rarity: 'mythic' },
+      { color: 'Wild', value: 'Domain', rarity: 'mythic' },
+      { color: 'Wild', value: 'Reflect', rarity: 'mythic' }
+    ];
+    const picked = mythics[Math.floor(Math.random() * mythics.length)];
+    const card = { ...picked, id: Math.random().toString(36).substr(2, 9) };
+    player.cards.push(card);
+    io.to(room.roomCode).emit('chatMessage', {
+      sender: '🌟 MYTHIC DRAW!',
+      text: `${player.avatar} ${player.name} pulled a 0.0001% MYTHIC ${card.value} CARD!`
+    });
+    return card;
+  }
+
+  if (room.deck.length === 0) room.deck = createDeck(room.moreCards);
+  const c = room.deck.pop();
+  player.cards.push(c);
+  return c;
 }
 
 function getActivePlayers(room) {
@@ -110,13 +146,15 @@ function advanceTurn(room, steps = 1) {
   const total = room.players.length;
   if (total === 0 || checkGameOverCondition(room)) return;
 
-  for (let i = 0; i < steps; i++) {
-    do {
-      room.currentTurnIndex = (room.currentTurnIndex + room.direction + total) % total;
-    } while (room.players[room.currentTurnIndex].finished);
+  if (room.domainTurns > 0) {
+    room.domainTurns--;
+    if (room.domainTurns === 0) {
+      room.domainColor = null;
+      io.to(room.roomCode).emit('chatMessage', { sender: 'System', text: '🌀 Domain Expansion lock has ended!' });
+    }
   }
 
-  if (room.players[room.currentTurnIndex].finished) {
+  for (let i = 0; i < steps; i++) {
     do {
       room.currentTurnIndex = (room.currentTurnIndex + room.direction + total) % total;
     } while (room.players[room.currentTurnIndex].finished);
@@ -130,6 +168,20 @@ function advanceTurn(room, steps = 1) {
   const currP = room.players[room.currentTurnIndex];
   const nextP = room.players[nextIdx];
 
+  // Manage Spy visibility expiration
+  room.players.forEach(p => {
+    if (p.spyTurns > 0) {
+      p.spyTurns--;
+      if (p.spyTurns === 0) {
+        io.to(room.roomCode).emit('chatMessage', { sender: 'System', text: `👁️ ${p.avatar} ${p.name}'s hand is hidden again.` });
+      }
+    }
+  });
+
+  const revealedPlayers = room.players
+    .filter(p => p.spyTurns > 0 && !p.finished)
+    .map(p => ({ sessionId: p.sessionId, cards: p.cards }));
+
   io.to(room.roomCode).emit('gameState', {
     discardPile: room.discardPile,
     currentTurn: `${currP.avatar} ${currP.name}`,
@@ -139,7 +191,11 @@ function advanceTurn(room, steps = 1) {
     direction: room.direction,
     stackedDraw: room.stackedDraw,
     gameStarted: room.gameStarted,
-    red7Rule: room.red7Rule
+    red7Rule: room.red7Rule,
+    moreCards: room.moreCards,
+    domainColor: room.domainColor,
+    domainTurns: room.domainTurns,
+    revealedPlayers
   });
 
   startTurnTimer(room.roomCode);
@@ -163,7 +219,8 @@ function emitLobbyUpdate(roomCode) {
     gameStarted: room.gameStarted,
     isPrivate: room.isPrivate,
     hasPassword: !!room.password,
-    red7Rule: room.red7Rule
+    red7Rule: room.red7Rule,
+    moreCards: room.moreCards
   });
 }
 
@@ -186,8 +243,7 @@ function resolveRed7Penalty(roomCode) {
 
   if (loser) {
     for (let i = 0; i < 7; i++) {
-      if (room.deck.length === 0) room.deck = createDeck();
-      loser.cards.push(room.deck.pop());
+      drawCardForPlayer(room, loser);
     }
     io.to(loser.socketId).emit('yourHand', loser.cards);
     io.to(roomCode).emit('chatMessage', { 
@@ -202,7 +258,7 @@ function resolveRed7Penalty(roomCode) {
 io.on('connection', (socket) => {
   socket.on('getLobbies', () => broadcastLobbies());
 
-  socket.on('joinRoom', ({ username, roomCode, avatar, sessionId, isPrivate, password, red7Rule }) => {
+  socket.on('joinRoom', ({ username, roomCode, avatar, sessionId, isPrivate, password, red7Rule, moreCards }) => {
     if (!rooms[roomCode]) {
       rooms[roomCode] = { 
         hostSessionId: sessionId,
@@ -212,9 +268,12 @@ io.on('connection', (socket) => {
         isPrivate: !!isPrivate,
         password: password || null,
         red7Rule: red7Rule !== undefined ? red7Rule : true,
+        moreCards: moreCards !== undefined ? moreCards : true,
         red7Active: false,
         red7Responded: [],
-        red7Timer: null
+        red7Timer: null,
+        domainColor: null,
+        domainTurns: 0
       };
     }
 
@@ -243,7 +302,10 @@ io.on('connection', (socket) => {
       if (room.players.length >= 12) return socket.emit('errorMsg', 'Room full (12 max).');
       if (room.gameStarted) return socket.emit('errorMsg', 'Game in progress.');
 
-      existingPlayer = { sessionId, socketId: socket.id, name: socket.username, avatar: socket.avatar, cards: [], finished: false, connected: true };
+      existingPlayer = { 
+        sessionId, socketId: socket.id, name: socket.username, avatar: socket.avatar, 
+        cards: [], finished: false, connected: true, spyTurns: 0 
+      };
       room.players.push(existingPlayer);
     }
 
@@ -251,24 +313,21 @@ io.on('connection', (socket) => {
     broadcastLobbies();
 
     if (room.gameStarted) {
-      let nextIdx = (room.currentTurnIndex + room.direction + room.players.length) % room.players.length;
-      while (room.players[nextIdx] && room.players[nextIdx].finished) {
-        nextIdx = (nextIdx + room.direction + room.players.length) % room.players.length;
-      }
-
       const currP = room.players[room.currentTurnIndex];
-      const nextP = room.players[nextIdx];
-
       socket.emit('gameState', {
         discardPile: room.discardPile,
         currentTurn: currP ? `${currP.avatar} ${currP.name}` : '--',
         currentSessionId: currP ? currP.sessionId : null,
-        nextTurn: nextP ? `${nextP.avatar} ${nextP.name}` : '--',
+        nextTurn: '--',
         leaderboard: room.leaderboard,
         direction: room.direction,
         stackedDraw: room.stackedDraw,
         gameStarted: room.gameStarted,
-        red7Rule: room.red7Rule
+        red7Rule: room.red7Rule,
+        moreCards: room.moreCards,
+        domainColor: room.domainColor,
+        domainTurns: room.domainTurns,
+        revealedPlayers: []
       });
       socket.emit('yourHand', existingPlayer.cards);
     }
@@ -278,6 +337,13 @@ io.on('connection', (socket) => {
     const room = rooms[socket.roomCode];
     if (!room || room.hostSessionId !== socket.sessionId || room.gameStarted) return;
     room.red7Rule = enabled;
+    emitLobbyUpdate(socket.roomCode);
+  });
+
+  socket.on('toggleMoreCards', (enabled) => {
+    const room = rooms[socket.roomCode];
+    if (!room || room.hostSessionId !== socket.sessionId || room.gameStarted) return;
+    room.moreCards = enabled;
     emitLobbyUpdate(socket.roomCode);
   });
 
@@ -312,7 +378,7 @@ io.on('connection', (socket) => {
 
   function executeGameStart(room) {
     room.gameStarted = true;
-    room.deck = createDeck();
+    room.deck = createDeck(room.moreCards);
     room.leaderboard = [];
     room.discardPile = [];
     room.direction = 1;
@@ -320,9 +386,15 @@ io.on('connection', (socket) => {
     room.unoCalled = {};
     room.red7Active = false;
     room.red7Responded = [];
+    room.domainColor = null;
+    room.domainTurns = 0;
 
     room.players.forEach(p => {
-      p.cards = room.deck.splice(0, 7);
+      p.cards = [];
+      p.spyTurns = 0;
+      for (let i = 0; i < 7; i++) {
+        drawCardForPlayer(room, p);
+      }
       p.finished = false;
       io.to(p.socketId).emit('yourHand', p.cards);
     });
@@ -355,8 +427,7 @@ io.on('connection', (socket) => {
     if (!player || player.finished) return;
 
     if (!room.red7Rule || !room.red7Active) {
-      if (room.deck.length === 0) room.deck = createDeck();
-      player.cards.push(room.deck.pop());
+      drawCardForPlayer(room, player);
       socket.emit('yourHand', player.cards);
       socket.emit('handPenaltyMsg', '⚠️ False Hand Extension! +1 Card Penalty!');
       io.to(socket.roomCode).emit('chatMessage', { 
@@ -383,7 +454,22 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('playCards', ({ cardIds, chosenColor }) => {
+  // Debug Give Card Command handler
+  socket.on('debugGiveCard', ({ color, value, rarity }) => {
+    const room = rooms[socket.roomCode];
+    if (!room || !room.gameStarted) return;
+
+    const player = room.players.find(p => p.sessionId === socket.sessionId);
+    if (!player) return;
+
+    const card = { color, value, rarity: rarity || null, id: Math.random().toString(36).substr(2, 9) };
+    player.cards.push(card);
+
+    socket.emit('yourHand', player.cards);
+    socket.emit('chatMessage', { sender: '🛠️ DEBUG', text: `Given card: [${color} ${value}]` });
+  });
+
+  socket.on('playCards', ({ cardIds, chosenColor, targetSessionId }) => {
     const room = rooms[socket.roomCode];
     if (!room || !room.gameStarted) return;
 
@@ -400,10 +486,28 @@ io.on('connection', (socket) => {
     const top = room.discardPile[room.discardPile.length - 1];
     const firstCard = playedCards[0];
 
-    if (room.stackedDraw > 0 && firstCard.value !== '+2' && firstCard.value !== '+4') return;
+    // Domain Expansion color enforcement check
+    if (room.domainColor && firstCard.color !== 'Wild' && firstCard.color !== room.domainColor) {
+      return socket.emit('chatMessage', { sender: 'System', text: `🌀 Domain Active! You must play ${room.domainColor}!` });
+    }
+
+    // Shield Counter check against stacked draws
+    if (firstCard.value === 'Shield' && room.stackedDraw > 0) {
+      cardIds.forEach(id => {
+        const idx = player.cards.findIndex(c => c.id === id);
+        if (idx !== -1) player.cards.splice(idx, 1);
+      });
+      addCardToPile(room, firstCard);
+      io.to(socket.roomCode).emit('chatMessage', { sender: '🛡️ SHIELD', text: `${player.avatar} ${player.name} blocked $+${room.stackedDraw}$ draw attack!` });
+      room.stackedDraw = 0;
+      socket.emit('yourHand', player.cards);
+      return advanceTurn(room, 1);
+    }
+
+    if (room.stackedDraw > 0 && !['+2', '+4', '+25'].includes(firstCard.value)) return;
 
     const isMatch = firstCard.color === 'Wild' || firstCard.color === top.color || firstCard.value === top.value;
-    if (!isMatch) return;
+    if (!isMatch && !room.domainColor) return;
 
     cardIds.forEach(id => {
       const idx = player.cards.findIndex(c => c.id === id);
@@ -416,14 +520,60 @@ io.on('connection', (socket) => {
       addCardToPile(room, c);
     });
 
-    const isWildPlus4 = playedCards.some(c => c.value === '+4');
+    const isWildPlus = ['+4', '+25'].includes(firstCard.value);
     const isHeavyStack = room.stackedDraw >= 4;
 
     io.to(socket.roomCode).emit('cardPlayedEvent', {
-      isWildPlus4,
+      isWildPlus4: isWildPlus,
       isHeavyStack,
       cardCount: playedCards.length
     });
+
+    // Custom Cards Logic Engine
+    if (firstCard.value === '+25') {
+      room.stackedDraw += 25 * playedCards.length;
+      io.to(socket.roomCode).emit('chatMessage', { sender: '💣 NUKE', text: `BOOM! $+25$ Nuke played! Stack total: $+${room.stackedDraw}$` });
+    } else if (firstCard.value === 'Reset') {
+      io.to(socket.roomCode).emit('chatMessage', { sender: '👑 GOLDEN RESET', text: 'All hands discarded and reshuffled! Everyone draws 7 fresh cards!' });
+      room.players.forEach(p => {
+        if (!p.finished) {
+          p.cards = [];
+          for (let i = 0; i < 7; i++) drawCardForPlayer(room, p);
+          io.to(p.socketId).emit('yourHand', p.cards);
+        }
+      });
+    } else if (firstCard.value === 'Domain') {
+      room.domainColor = chosenColor || 'Red';
+      room.domainTurns = 3 * room.players.length;
+      io.to(socket.roomCode).emit('chatMessage', { sender: '🌀 DOMAIN EXPANSION', text: `Domain locked to ${room.domainColor} for 3 rounds!` });
+    } else if (firstCard.value === 'Reflect' && room.stackedDraw > 0) {
+      room.direction *= -1;
+      io.to(socket.roomCode).emit('chatMessage', { sender: '🪞 REFLECT', text: `Reflected $+${room.stackedDraw}$ attack back to sender!` });
+    } else if (firstCard.value === 'Roulette') {
+      const rolled = Math.floor(Math.random() * 6) + 1;
+      if (rolled === 1) {
+        room.stackedDraw += 10;
+        io.to(socket.roomCode).emit('chatMessage', { sender: '🎲 ROULETTE', text: `JACKPOT! Next player faces $+10$ draw penalty!` });
+      } else {
+        for (let i = 0; i < 3; i++) drawCardForPlayer(room, player);
+        io.to(socket.roomCode).emit('chatMessage', { sender: '🎲 ROULETTE', text: `${player.avatar} ${player.name} missed roll and drew 3 cards!` });
+      }
+    } else if (firstCard.value === 'Spy') {
+      const activeTargets = getActivePlayers(room).filter(p => p.sessionId !== player.sessionId);
+      const target = activeTargets.find(p => p.sessionId === targetSessionId) || activeTargets[0];
+      if (target) {
+        target.spyTurns = 2;
+        io.to(socket.roomCode).emit('chatMessage', { sender: '👁️ SPY', text: `${target.avatar} ${target.name}'s hand is now exposed for 2 rounds!` });
+      }
+    } else if (firstCard.value === 'TaxCollector') {
+      getActivePlayers(room).forEach(p => {
+        if (p.sessionId !== player.sessionId) {
+          drawCardForPlayer(room, p);
+          io.to(p.socketId).emit('yourHand', p.cards);
+        }
+      });
+      io.to(socket.roomCode).emit('chatMessage', { sender: '💰 TAX COLLECTOR', text: `Tax collected! All other players drew 1 card!` });
+    }
 
     const playedRed7 = playedCards.some(c => c.color === 'Red' && c.value === '7');
     if (room.red7Rule && playedRed7) {
@@ -439,8 +589,7 @@ io.on('connection', (socket) => {
 
     if (player.cards.length === 1) {
       if (!room.unoCalled[player.sessionId]) {
-        if (room.deck.length === 0) room.deck = createDeck();
-        player.cards.push(room.deck.pop());
+        drawCardForPlayer(room, player);
         io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `⚠️ ${player.avatar} ${player.name} forgot to call UNO! +1 Card Penalty!` });
       }
     } else if (player.cards.length > 1) {
@@ -478,8 +627,7 @@ io.on('connection', (socket) => {
     room.stackedDraw = 0;
 
     for (let i = 0; i < drawCount; i++) {
-      if (room.deck.length === 0) room.deck = createDeck();
-      player.cards.push(room.deck.pop());
+      drawCardForPlayer(room, player);
     }
 
     if (player.cards.length > 1) room.unoCalled[player.sessionId] = false;
@@ -490,7 +638,14 @@ io.on('connection', (socket) => {
   });
 
   socket.on('sendChat', (text) => {
-    if (socket.roomCode) io.to(socket.roomCode).emit('chatMessage', { sender: `${socket.avatar} ${socket.username}`, text });
+    if (!socket.roomCode) return;
+
+    // Secret Debug Menu Command
+    if (text.trim() === '/give 67') {
+      return socket.emit('openDebugMenu');
+    }
+
+    io.to(socket.roomCode).emit('chatMessage', { sender: `${socket.avatar} ${socket.username}`, text });
   });
 
   socket.on('sendEmoji', (emoji) => {
