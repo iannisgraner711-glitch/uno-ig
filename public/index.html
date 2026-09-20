@@ -153,6 +153,29 @@
       0% { opacity: 1; transform: translate(0, 0) scale(1); }
       100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.2); }
     }
+
+    /* Red 7 Hand Overlay */
+    .extended-hand-avatar {
+      position: absolute;
+      font-size: 32px;
+      z-index: 200;
+      pointer-events: none;
+      animation: slapHand 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    @keyframes slapHand {
+      0% { transform: scale(3) translateY(-100px); opacity: 0; }
+      100% { transform: scale(1) translateY(0); opacity: 1; }
+    }
+
+    .red7-active-glow {
+      animation: redGlow 0.5s infinite alternate;
+    }
+
+    @keyframes redGlow {
+      from { box-shadow: 0 0 10px #e74c3c; }
+      to { box-shadow: 0 0 25px #ff0000; }
+    }
   </style>
 </head>
 <body>
@@ -239,6 +262,16 @@
     <h3>Players:</h3>
     <ul id="playerList" style="list-style:none; padding:0; font-size: 18px;"></ul>
 
+    <div style="margin: 10px 0; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+      <label style="font-size: 15px; font-weight: bold; cursor: pointer;">
+        <input type="checkbox" id="red7Toggle" onchange="toggleRed7(this.checked)">
+        🔥 Enable Red 7 Rule
+      </label>
+      <div style="font-size: 11px; color: #aaa; margin-top: 4px;">
+        When a Red 7 is played, all players must tap 'Extend Hand'! Last person draws 7 cards!
+      </div>
+    </div>
+
     <div id="hostControls">
       <button id="startBtn" onclick="requestStart()" style="background-color: #007bff;">Start Game</button>
     </div>
@@ -260,12 +293,14 @@
 
     <div class="pile-area" id="pileArea">
       <div id="dirArrow" class="direction-arrow"></div>
+      <div id="handOverlays"></div>
     </div>
 
-    <div>
+    <div style="display: flex; justify-content: center; gap: 6px; flex-wrap: wrap;">
       <button id="playSelectedBtn" onclick="submitSelectedCards()" style="background-color: #28a745;" class="hidden">Play Selected Stack</button>
       <button onclick="drawCard()" style="background-color: #e67e22;">Draw Card</button>
       <button id="unoBtn" onclick="callUno()" style="background-color: #e74c3c;">🚨 UNO!</button>
+      <button id="extendHandBtn" onclick="extendHand()" style="background-color: #d35400;">✋ Extend Hand</button>
     </div>
 
     <div style="margin-top: 4px;">
@@ -350,6 +385,24 @@
         gain.gain.linearRampToValueAtTime(0.001, now + 0.05);
         osc.start(now);
         osc.stop(now + 0.05);
+      } else if (type === 'startChime') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(261.63, now);
+        osc.frequency.setValueAtTime(329.63, now + 0.1);
+        osc.frequency.setValueAtTime(392.00, now + 0.2);
+        osc.frequency.setValueAtTime(523.25, now + 0.3);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.6);
+        osc.start(now);
+        osc.stop(now + 0.6);
+      } else if (type === 'slap') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+        osc.start(now);
+        osc.stop(now + 0.08);
       } else if (type === 'victory') {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(440, now);
@@ -468,6 +521,14 @@
       document.getElementById('roomTitle').innerText = "Room: " + roomCode;
     }
 
+    function toggleRed7(enabled) {
+      if (isHost) socket.emit('toggleRed7Rule', enabled);
+    }
+
+    function extendHand() {
+      socket.emit('extendHand');
+    }
+
     function copyInviteLink() {
       const roomCode = document.getElementById('roomCode').value.trim() || urlData.room;
       const url = `${window.location.origin}/#${roomCode}`;
@@ -505,7 +566,10 @@
       }
       container.innerHTML = lobbies.map(l => `
         <div class="lobby-item">
-          <div><strong>Room ${l.code}</strong> ${l.hasPassword ? '🔒' : ''} (${l.players}/12)</div>
+          <div>
+            <strong>Room ${l.code}</strong> ${l.hasPassword ? '🔒' : ''} (${l.players}/12)<br>
+            <small style="color:#aaa;">Red 7: ${l.red7Rule ? 'ON' : 'OFF'}</small>
+          </div>
           <button onclick="joinFromBrowser('${l.code}', ${l.hasPassword})">Join</button>
         </div>
       `).join('');
@@ -555,6 +619,44 @@
       const box = document.getElementById('chatBox');
       box.innerHTML += `<div>🚨 <strong>${data.sender}</strong> called UNO!</div>`;
       box.scrollTop = box.scrollHeight;
+    });
+
+    socket.on('red7Triggered', () => {
+      triggerScreenShake();
+      playSound('uno');
+      const btn = document.getElementById('extendHandBtn');
+      btn.classList.add('red7-active-glow');
+      const pile = document.getElementById('pileArea');
+      pile.classList.add('red7-active-glow');
+      document.getElementById('handOverlays').innerHTML = '';
+    });
+
+    socket.on('red7Ended', () => {
+      const btn = document.getElementById('extendHandBtn');
+      btn.classList.remove('red7-active-glow');
+      const pile = document.getElementById('pileArea');
+      pile.classList.remove('red7-active-glow');
+      setTimeout(() => {
+        document.getElementById('handOverlays').innerHTML = '';
+      }, 1000);
+    });
+
+    socket.on('handExtendedEvent', (data) => {
+      playSound('slap');
+      const overlays = document.getElementById('handOverlays');
+      const angle = (data.order * 60) % 360;
+      
+      const handEl = document.createElement('div');
+      handEl.className = 'extended-hand-avatar';
+      handEl.innerText = `${data.avatar}✋`;
+      handEl.style.transform = `rotate(${angle}deg) translateY(-20px)`;
+      
+      overlays.appendChild(handEl);
+    });
+
+    socket.on('handPenaltyMsg', (msg) => {
+      playSound('defeat');
+      alert(msg);
     });
 
     socket.on('cardPlayedEvent', (data) => {
@@ -630,8 +732,12 @@
     }
 
     socket.on('startCountdown', (sec) => {
-      playSound('tick');
-      document.getElementById('countdownDisplay').innerText = `Game starting in ${sec}...`;
+      if (sec > 0) {
+        playSound('tick');
+      } else {
+        playSound('startChime');
+      }
+      document.getElementById('countdownDisplay').innerText = sec > 0 ? `Game starting in ${sec}...` : `GO!`;
       document.getElementById('hostControls').classList.add('hidden');
       document.getElementById('guestWaitingMsg').classList.add('hidden');
     });
@@ -640,6 +746,9 @@
 
     socket.on('updateLobby', (data) => {
       isHost = (data.hostSessionId === sessionId);
+
+      document.getElementById('red7Toggle').checked = data.red7Rule;
+      document.getElementById('red7Toggle').disabled = !isHost;
 
       document.getElementById('playerList').innerHTML = data.players.map(p => `
         <li style="margin: 6px 0;">
@@ -696,7 +805,9 @@
       else dirArrow.classList.remove('reverse');
 
       const pileArea = document.getElementById('pileArea');
+      const handOverlaysHTML = document.getElementById('handOverlays').outerHTML;
       pileArea.innerHTML = `<div id="dirArrow" class="${dirArrow.className}"></div>` + 
+        handOverlaysHTML +
         data.discardPile.map((c, i) => {
           const transformStr = `transform: translate(${c.offsetX}px, ${c.offsetY}px) rotate(${c.rot}deg);`;
           return createCardMarkup(c, i, transformStr);

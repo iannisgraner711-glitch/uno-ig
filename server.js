@@ -40,7 +40,8 @@ function broadcastLobbies() {
     .map(code => ({
       code,
       players: rooms[code].players.length,
-      hasPassword: !!rooms[code].password
+      hasPassword: !!rooms[code].password,
+      red7Rule: rooms[code].red7Rule
     }));
 
   io.emit('lobbyList', list);
@@ -137,7 +138,8 @@ function advanceTurn(room, steps = 1) {
     leaderboard: room.leaderboard,
     direction: room.direction,
     stackedDraw: room.stackedDraw,
-    gameStarted: room.gameStarted
+    gameStarted: room.gameStarted,
+    red7Rule: room.red7Rule
   });
 
   startTurnTimer(room.roomCode);
@@ -160,14 +162,50 @@ function emitLobbyUpdate(roomCode) {
     hostSessionId: room.hostSessionId,
     gameStarted: room.gameStarted,
     isPrivate: room.isPrivate,
-    hasPassword: !!room.password
+    hasPassword: !!room.password,
+    red7Rule: room.red7Rule
   });
+}
+
+function resolveRed7Penalty(roomCode) {
+  const room = rooms[roomCode];
+  if (!room || !room.red7Active) return;
+
+  room.red7Active = false;
+  const activePlayers = getActivePlayers(room);
+  
+  // Find active players who did NOT extend hand
+  const missing = activePlayers.filter(p => !room.red7Responded.includes(p.sessionId));
+
+  let loser = null;
+  if (missing.length > 0) {
+    // If some players didn't extend, pick the first one missing
+    loser = missing[0];
+  } else if (room.red7Responded.length > 0) {
+    // Last person to extend their hand loses
+    const loserSessionId = room.red7Responded[room.red7Responded.length - 1];
+    loser = room.players.find(p => p.sessionId === loserSessionId);
+  }
+
+  if (loser) {
+    for (let i = 0; i < 7; i++) {
+      if (room.deck.length === 0) room.deck = createDeck();
+      loser.cards.push(room.deck.pop());
+    }
+    io.to(loser.socketId).emit('yourHand', loser.cards);
+    io.to(roomCode).emit('chatMessage', { 
+      sender: 'System', 
+      text: `🔥 RED 7 PENALTY! ${loser.avatar} ${loser.name} extended hand LAST and drew 7 cards!` 
+    });
+  }
+
+  io.to(roomCode).emit('red7Ended');
 }
 
 io.on('connection', (socket) => {
   socket.on('getLobbies', () => broadcastLobbies());
 
-  socket.on('joinRoom', ({ username, roomCode, avatar, sessionId, isPrivate, password }) => {
+  socket.on('joinRoom', ({ username, roomCode, avatar, sessionId, isPrivate, password, red7Rule }) => {
     if (!rooms[roomCode]) {
       rooms[roomCode] = { 
         hostSessionId: sessionId,
@@ -175,7 +213,11 @@ io.on('connection', (socket) => {
         currentTurnIndex: 0, leaderboard: [], direction: 1, timer: null, timeLeft: 30, roomCode,
         stackedDraw: 0, unoCalled: {},
         isPrivate: !!isPrivate,
-        password: password || null
+        password: password || null,
+        red7Rule: red7Rule !== undefined ? red7Rule : true,
+        red7Active: false,
+        red7Responded: [],
+        red7Timer: null
       };
     }
 
@@ -228,10 +270,18 @@ io.on('connection', (socket) => {
         leaderboard: room.leaderboard,
         direction: room.direction,
         stackedDraw: room.stackedDraw,
-        gameStarted: room.gameStarted
+        gameStarted: room.gameStarted,
+        red7Rule: room.red7Rule
       });
       socket.emit('yourHand', existingPlayer.cards);
     }
+  });
+
+  socket.on('toggleRed7Rule', (enabled) => {
+    const room = rooms[socket.roomCode];
+    if (!room || room.hostSessionId !== socket.sessionId || room.gameStarted) return;
+    room.red7Rule = enabled;
+    emitLobbyUpdate(socket.roomCode);
   });
 
   socket.on('kickPlayer', (targetSessionId) => {
@@ -271,6 +321,8 @@ io.on('connection', (socket) => {
     room.direction = 1;
     room.stackedDraw = 0;
     room.unoCalled = {};
+    room.red7Active = false;
+    room.red7Responded = [];
 
     room.players.forEach(p => {
       p.cards = room.deck.splice(0, 7);
@@ -296,6 +348,43 @@ io.on('connection', (socket) => {
     room.unoCalled[socket.sessionId] = true;
     io.to(socket.roomCode).emit('unoCalledEvent', { sender: `${socket.avatar} ${socket.username}` });
     socket.emit('unoAcknowledged');
+  });
+
+  socket.on('extendHand', () => {
+    const room = rooms[socket.roomCode];
+    if (!room || !room.gameStarted) return;
+
+    const player = room.players.find(p => p.sessionId === socket.sessionId);
+    if (!player || player.finished) return;
+
+    if (!room.red7Rule || !room.red7Active) {
+      // FALSE ALARM PENALTY (+1 Card)
+      if (room.deck.length === 0) room.deck = createDeck();
+      player.cards.push(room.deck.pop());
+      socket.emit('yourHand', player.cards);
+      socket.emit('handPenaltyMsg', '⚠️ False Hand Extension! +1 Card Penalty!');
+      io.to(socket.roomCode).emit('chatMessage', { 
+        sender: 'System', 
+        text: `⚠️ ${player.avatar} ${player.name} extended hand on a non-Red 7! +1 Card Penalty!` 
+      });
+      return;
+    }
+
+    if (!room.red7Responded.includes(socket.sessionId)) {
+      room.red7Responded.push(socket.sessionId);
+      io.to(socket.roomCode).emit('handExtendedEvent', { 
+        sessionId: socket.sessionId, 
+        avatar: player.avatar, 
+        name: player.name,
+        order: room.red7Responded.length
+      });
+
+      const activePlayers = getActivePlayers(room);
+      if (room.red7Responded.length === activePlayers.length) {
+        if (room.red7Timer) clearTimeout(room.red7Timer);
+        resolveRed7Penalty(socket.roomCode);
+      }
+    }
   });
 
   socket.on('playCards', ({ cardIds, chosenColor }) => {
@@ -339,6 +428,19 @@ io.on('connection', (socket) => {
       isHeavyStack,
       cardCount: playedCards.length
     });
+
+    // Check for RED 7
+    const playedRed7 = playedCards.some(c => c.color === 'Red' && c.value === '7');
+    if (room.red7Rule && playedRed7) {
+      room.red7Active = true;
+      room.red7Responded = [];
+      io.to(socket.roomCode).emit('red7Triggered');
+
+      if (room.red7Timer) clearTimeout(room.red7Timer);
+      room.red7Timer = setTimeout(() => {
+        resolveRed7Penalty(socket.roomCode);
+      }, 3000);
+    }
 
     if (player.cards.length === 1) {
       if (!room.unoCalled[player.sessionId]) {
@@ -429,6 +531,7 @@ io.on('connection', (socket) => {
 
         if (getActivePlayers(room).length === 0) {
           if (room.timer) clearInterval(room.timer);
+          if (room.red7Timer) clearTimeout(room.red7Timer);
           delete rooms[socket.roomCode];
         }
         
