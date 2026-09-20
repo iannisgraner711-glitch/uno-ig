@@ -4,14 +4,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>UNO Party Deluxe</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&display=swap');
+
     :root {
       --bg-color: #121212;
       --panel-bg: #1e1e1e;
-      --card-w: clamp(55px, 12vw, 80px);
-      --card-h: calc(var(--card-w) * 1.46);
+      --card-w: clamp(62px, 13vw, 90px);
+      --card-h: calc(var(--card-w) * 1.48);
     }
-    body.theme-wood { --bg-color: #2e1d0c; --panel-bg: #422b15; }
-    body.theme-neon { --bg-color: #0d0221; --panel-bg: #190933; }
+
+    /* --- REALISTIC EXPANDED THEMES --- */
+    body.theme-wood { 
+      --bg-color: #1b381e; 
+      --panel-bg: #122815; 
+      background-image: radial-gradient(#27522c 15%, transparent 16%), radial-gradient(#153018 15%, transparent 16%);
+      background-size: 60px 60px;
+      background-position: 0 0, 30px 30px;
+    }
+    body.theme-neon { 
+      --bg-color: #0b0114; 
+      --panel-bg: #19052b; 
+      background-image: linear-gradient(rgba(255, 0, 128, 0.08) 1px, transparent 0), linear-gradient(90deg, rgba(0, 240, 255, 0.08) 1px, transparent 0);
+      background-size: 30px 30px;
+    }
+    body.theme-casino {
+      --bg-color: #3b0000;
+      --panel-bg: #220000;
+      background-image: radial-gradient(#600000 20%, transparent 20%);
+      background-size: 25px 25px;
+    }
+    body.theme-ocean {
+      --bg-color: #051923;
+      --panel-bg: #003554;
+      background-image: radial-gradient(#006494 15%, transparent 16%);
+      background-size: 40px 40px;
+    }
+    body.theme-sunset {
+      --bg-color: #2b1055;
+      --panel-bg: #4c1c5c;
+      background: linear-gradient(135deg, #2b1055 0%, #75225b 50%, #b54552 100%);
+    }
 
     * { box-sizing: border-box; }
 
@@ -28,10 +60,7 @@
       flex-direction: column;
     }
 
-    .shake {
-      animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
-    }
-
+    .shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
     @keyframes shake {
       10%, 90% { transform: translate3d(-2px, 0, 0); }
       20%, 80% { transform: translate3d(4px, 0, 0); }
@@ -75,42 +104,102 @@
     .timer-container { width: min(85%, 400px); background: #333; height: clamp(6px, 1.5vh, 10px); border-radius: 5px; margin: 4px auto 10px auto; overflow: hidden; }
     .timer-fill { width: 100%; height: 100%; background: #e74c3c; transition: width 1s linear; }
 
+    /* --- HIGH-REALISM CARD RENDERING ENGINE --- */
     .card {
       width: var(--card-w);
       height: var(--card-h);
-      border-radius: clamp(5px, 1.2vw, 10px);
-      border: clamp(2px, 0.4vw, 3px) solid #fff;
+      border-radius: clamp(6px, 1.3vw, 10px);
+      border: clamp(3px, 0.5vw, 4px) solid #ffffff;
       position: relative;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+      box-shadow: 0 6px 14px rgba(0,0,0,0.6), inset 0 0 4px rgba(0,0,0,0.3);
       cursor: pointer;
       display: inline-block;
       user-select: none;
       flex-shrink: 0;
-      transition: transform 0.2s ease, border-color 0.2s ease;
+      transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease;
       transform-origin: bottom center;
+      perspective: 600px;
+      font-family: 'Montserrat', sans-serif;
     }
-    .card.selected { border: 4px solid #f1c40f !important; transform: translateY(-25px) scale(1.1) !important; z-index: 150 !important; }
-    .card:hover { transform: translateY(-20px) scale(1.15); z-index: 100; }
-    .card .corner { position: absolute; top: 2px; left: 4px; font-size: clamp(9px, 2vw, 12px); font-weight: bold; }
+
+    /* Dynamic Sheen/Reflection Overlay */
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,0.15) 100%);
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .card.selected { 
+      border: 4px solid #f1c40f !important; 
+      transform: translateY(-28px) scale(1.12) rotateX(10deg) !important; 
+      z-index: 150 !important; 
+      box-shadow: 0 15px 25px rgba(241, 196, 15, 0.4) !important;
+    }
+    
+    .card:hover { 
+      transform: translateY(-22px) scale(1.15) rotateY(-5deg); 
+      z-index: 100; 
+      box-shadow: 0 12px 20px rgba(0,0,0,0.8);
+    }
+
+    .card .corner { 
+      position: absolute; 
+      font-size: clamp(10px, 2.2vw, 13px); 
+      font-weight: 900; 
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.4);
+      z-index: 2;
+    }
+    .card .corner.top-left { top: 3px; left: 5px; }
+    .card .corner.bottom-right { bottom: 3px; right: 5px; transform: rotate(180deg); }
+
     .card .center-oval {
-      width: 65%; height: 65%; background: white; border-radius: 50%;
-      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-15deg);
-      display: flex; align-items: center; justify-content: center;
+      width: 70%; 
+      height: 68%; 
+      background: #ffffff; 
+      border-radius: 50%;
+      position: absolute; 
+      top: 50%; 
+      left: 50%; 
+      transform: translate(-50%, -50%) rotate(-25deg);
+      display: flex; 
+      align-items: center; 
+      justify-content: center;
+      box-shadow: inset 0 2px 5px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+      border: 1px solid rgba(0,0,0,0.08);
     }
-    .card .center-number { font-size: clamp(14px, 3.5vw, 22px); font-weight: 900; }
 
-    .Red { background-color: #e74c3c; color: white; }
-    .Red .center-number { color: #e74c3c; }
-    .Blue { background-color: #2980b9; color: white; }
-    .Blue .center-number { color: #2980b9; }
-    .Green { background-color: #27ae60; color: white; }
+    .card .center-number { 
+      font-size: clamp(16px, 4vw, 26px); 
+      font-weight: 900; 
+      transform: rotate(25deg);
+      font-family: 'Montserrat', sans-serif;
+      filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.3));
+    }
+
+    /* Realistic Shading Colors */
+    .Red { background: linear-gradient(145deg, #ff4d4d, #c0392b); color: white; }
+    .Red .center-number { color: #d63031; }
+    
+    .Blue { background: linear-gradient(145deg, #3498db, #1d6fa5); color: white; }
+    .Blue .center-number { color: #0984e3; }
+    
+    .Green { background: linear-gradient(145deg, #2ecc71, #1e8449); color: white; }
     .Green .center-number { color: #27ae60; }
-    .Yellow { background-color: #f1c40f; color: black; }
-    .Yellow .center-number { color: #f1c40f; }
-    .Wild { background: linear-gradient(135deg, #e74c3c, #2980b9, #27ae60, #f1c40f); color: white; }
-    .Wild .center-number { color: #111; }
+    
+    .Yellow { background: linear-gradient(145deg, #f1c40f, #d4ac0d); color: #111; }
+    .Yellow .center-number { color: #f39c12; }
+    
+    .Wild { 
+      background: conic-gradient(from 45deg, #e74c3c, #2980b9, #27ae60, #f1c40f, #e74c3c); 
+      color: white; 
+    }
+    .Wild .center-number { color: #2c3e50; }
 
-    .pile-area { position: relative; width: clamp(100px, 25vw, 140px); height: clamp(100px, 25vw, 140px); margin: 6px auto; display: flex; align-items: center; justify-content: center; }
+    .pile-area { position: relative; width: clamp(110px, 26vw, 150px); height: clamp(110px, 26vw, 150px); margin: 6px auto; display: flex; align-items: center; justify-content: center; }
     .pile-area .card { position: absolute; }
     .direction-arrow { position: absolute; width: 100%; height: 100%; border: 3px dashed #f1c40f; border-radius: 50%; pointer-events: none; transition: transform 0.5s ease; }
     .direction-arrow.reverse { transform: rotate(-180deg); border-color: #e74c3c; }
@@ -154,7 +243,6 @@
       100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.2); }
     }
 
-    /* Red 7 Hand Overlay */
     .extended-hand-avatar {
       position: absolute;
       font-size: 32px;
@@ -184,8 +272,11 @@
     <div class="game-title" onclick="goHome()">🎴 Uno Game</div>
     <select class="theme-picker" onchange="changeTheme(this.value)">
       <option value="dark">🌙 Dark</option>
-      <option value="wood">🪵 Wood</option>
-      <option value="neon">⚡ Neon</option>
+      <option value="wood">🪵 Wood Table</option>
+      <option value="neon">⚡ Neon Grid</option>
+      <option value="casino">🎰 Casino Red</option>
+      <option value="ocean">🌊 Ocean Deep</option>
+      <option value="sunset">🌸 Sunset Gradient</option>
     </select>
   </header>
 
@@ -338,7 +429,6 @@
     let currentHand = [];
     let audioCtx = null;
 
-    // --- Web Audio SFX Engine ---
     function initAudio() {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
@@ -424,7 +514,6 @@
       }
     }
 
-    // --- Visual Juice (Particles & Shake) ---
     function triggerParticleExplosion(x, y, count = 25) {
       const colors = ['#e74c3c', '#2980b9', '#27ae60', '#f1c40f', '#ffffff'];
       for (let i = 0; i < count; i++) {
@@ -452,7 +541,6 @@
       setTimeout(() => document.body.classList.remove('shake'), 400);
     }
 
-    // --- Win / Loss Stats ---
     function loadStats() {
       const wins = parseInt(localStorage.getItem('uno_wins') || '0', 10);
       const losses = parseInt(localStorage.getItem('uno_losses') || '0', 10);
@@ -783,8 +871,9 @@
       const isSelected = selectedCards.includes(cardId) ? 'selected' : '';
       return `
         <div id="card-${cardId}" class="card ${c.color} ${isSelected}" style="z-index:${zIndex}; ${styleStr}" ${onClickAttr}>
-          <div class="corner">${symbol}</div>
+          <div class="corner top-left">${symbol}</div>
           <div class="center-oval"><span class="center-number">${symbol}</span></div>
+          <div class="corner bottom-right">${symbol}</div>
         </div>
       `;
     }

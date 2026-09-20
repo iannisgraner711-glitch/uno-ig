@@ -174,15 +174,12 @@ function resolveRed7Penalty(roomCode) {
   room.red7Active = false;
   const activePlayers = getActivePlayers(room);
   
-  // Find active players who did NOT extend hand
   const missing = activePlayers.filter(p => !room.red7Responded.includes(p.sessionId));
 
   let loser = null;
   if (missing.length > 0) {
-    // If some players didn't extend, pick the first one missing
     loser = missing[0];
   } else if (room.red7Responded.length > 0) {
-    // Last person to extend their hand loses
     const loserSessionId = room.red7Responded[room.red7Responded.length - 1];
     loser = room.players.find(p => p.sessionId === loserSessionId);
   }
@@ -358,7 +355,6 @@ io.on('connection', (socket) => {
     if (!player || player.finished) return;
 
     if (!room.red7Rule || !room.red7Active) {
-      // FALSE ALARM PENALTY (+1 Card)
       if (room.deck.length === 0) room.deck = createDeck();
       player.cards.push(room.deck.pop());
       socket.emit('yourHand', player.cards);
@@ -429,7 +425,6 @@ io.on('connection', (socket) => {
       cardCount: playedCards.length
     });
 
-    // Check for RED 7
     const playedRed7 = playedCards.some(c => c.color === 'Red' && c.value === '7');
     if (room.red7Rule && playedRed7) {
       room.red7Active = true;
