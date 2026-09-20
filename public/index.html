@@ -250,6 +250,11 @@
       box-sizing: border-box; overflow-x: auto; overflow-y: visible;
     }
 
+    .hand-container.overflow-fade {
+      mask-image: linear-gradient(to right, transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+    }
+
     .host-badge { background: #f39c12; color: #111; font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 4px; margin-left: 5px; }
     .kick-btn { background: #dc3545; font-size: 10px; padding: 2px 6px; margin-left: 8px; border-radius: 4px; cursor: pointer; }
 
@@ -463,7 +468,7 @@
 
     <div class="chat-section">
       <div class="chat-box" id="chatBox"></div>
-      <input type="text" id="chatInput" placeholder="Send message... (type /give 67 for debug)" onkeydown="if(event.key==='Enter') sendChat()"/>
+      <input type="text" id="chatInput" placeholder="Send message..." onkeydown="if(event.key==='Enter') sendChat()"/>
     </div>
   </div>
 
@@ -1035,8 +1040,18 @@
       const handDiv = document.getElementById('hand');
       const total = cards.length;
 
-      const overlapMargin = total > 5 ? Math.max(-45, -15 - (total * 2)) : -28;
-      const maxRotate = Math.min(20, total * 2);
+      // Scale overlap more aggressively as the hand grows, so a big hand
+      // compresses instead of just spilling further off-screen.
+      const overlapMargin = total > 5 ? Math.max(-62, -15 - (total * 2.4)) : -28;
+      const maxRotate = Math.min(20, total * 1.8);
+
+      // Past a point, also shrink the cards themselves so more stay
+      // comfortably visible before relying purely on overlap/scroll.
+      if (total > 12) {
+        handDiv.style.setProperty('--card-w', `clamp(46px, ${Math.max(7, 13 - (total - 12) * 0.35)}vw, 90px)`);
+      } else {
+        handDiv.style.removeProperty('--card-w');
+      }
 
       handDiv.innerHTML = cards.map((c, idx) => {
         const angle = total > 1 ? ((idx - (total - 1) / 2) / ((total - 1) / 2)) * maxRotate : 0;
@@ -1047,6 +1062,16 @@
         
         return createCardMarkup(c, idx, styleStr, clickCode, c.id);
       }).join('');
+
+      // Only show the edge fade (hinting "more cards, scroll me") once the
+      // hand actually overflows its container.
+      requestAnimationFrame(() => {
+        if (handDiv.scrollWidth > handDiv.clientWidth + 4) {
+          handDiv.classList.add('overflow-fade');
+        } else {
+          handDiv.classList.remove('overflow-fade');
+        }
+      });
     });
 
     function sendChat() {
