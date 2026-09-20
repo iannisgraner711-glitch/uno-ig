@@ -28,6 +28,17 @@
       flex-direction: column;
     }
 
+    .shake {
+      animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+    }
+
+    @keyframes shake {
+      10%, 90% { transform: translate3d(-2px, 0, 0); }
+      20%, 80% { transform: translate3d(4px, 0, 0); }
+      30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+      40%, 60% { transform: translate3d(6px, 0, 0); }
+    }
+
     header {
       display: flex;
       justify-content: space-between;
@@ -46,6 +57,19 @@
     button:disabled { background-color: #555 !important; cursor: not-allowed; opacity: 0.6; }
 
     .hidden { display: none !important; }
+
+    .stats-card {
+      background: rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 8px 14px;
+      margin: 10px auto;
+      display: inline-flex;
+      gap: 15px;
+      font-size: 13px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .stat-item { display: flex; flex-direction: column; align-items: center; }
+    .stat-num { font-weight: bold; font-size: 16px; color: #f1c40f; }
 
     .turn-bar { font-size: clamp(15px, 3.8vw, 20px); font-weight: bold; margin: 4px 0; }
     .timer-container { width: min(85%, 400px); background: #333; height: clamp(6px, 1.5vh, 10px); border-radius: 5px; margin: 4px auto 10px auto; overflow: hidden; }
@@ -119,6 +143,16 @@
       80% { opacity: 1; transform: translateY(-120px) scale(1); }
       100% { opacity: 0; transform: translateY(-180px) scale(0.8); }
     }
+
+    .particle {
+      position: fixed; pointer-events: none; border-radius: 50%;
+      z-index: 1000; animation: particlePop 0.8s ease-out forwards;
+    }
+
+    @keyframes particlePop {
+      0% { opacity: 1; transform: translate(0, 0) scale(1); }
+      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.2); }
+    }
   </style>
 </head>
 <body>
@@ -134,6 +168,12 @@
 
   <div id="loginScreen">
     <h2>Join Room</h2>
+
+    <div class="stats-card">
+      <div class="stat-item"><span class="stat-num" id="statWins">0</span><span>Wins</span></div>
+      <div class="stat-item"><span class="stat-num" id="statLosses">0</span><span>Losses</span></div>
+      <div class="stat-item"><span class="stat-num" id="statRate">0%</span><span>Win Rate</span></div>
+    </div><br>
     
     <input type="text" id="username" placeholder="Your Name" /><br>
 
@@ -261,6 +301,126 @@
     let isHost = false;
     let selectedCards = [];
     let currentHand = [];
+    let audioCtx = null;
+
+    // --- Web Audio SFX Engine ---
+    function initAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    function playSound(type) {
+      initAudio();
+      if (!audioCtx) return;
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      const now = audioCtx.currentTime;
+
+      if (type === 'playCard') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(150, now + 0.1);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+        osc.start(now);
+        osc.stop(now + 0.1);
+      } else if (type === 'drawCard') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.exponentialRampToValueAtTime(450, now + 0.12);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else if (type === 'uno') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(659.25, now + 0.15);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.35);
+        osc.start(now);
+        osc.stop(now + 0.35);
+      } else if (type === 'tick') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(800, now);
+        gain.gain.setValueAtTime(0.05, now);
+        gain.gain.linearRampToValueAtTime(0.001, now + 0.05);
+        osc.start(now);
+        osc.stop(now + 0.05);
+      } else if (type === 'victory') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.setValueAtTime(554.37, now + 0.15);
+        osc.frequency.setValueAtTime(659.25, now + 0.3);
+        osc.frequency.setValueAtTime(880, now + 0.45);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.8);
+        osc.start(now);
+        osc.stop(now + 0.8);
+      } else if (type === 'defeat') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.linearRampToValueAtTime(120, now + 0.5);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
+        osc.start(now);
+        osc.stop(now + 0.5);
+      }
+    }
+
+    // --- Visual Juice (Particles & Shake) ---
+    function triggerParticleExplosion(x, y, count = 25) {
+      const colors = ['#e74c3c', '#2980b9', '#27ae60', '#f1c40f', '#ffffff'];
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        const size = Math.floor(Math.random() * 8) + 6;
+        p.style.width = `${size}px`;
+        p.style.height = `${size}px`;
+        p.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        p.style.left = `${x}px`;
+        p.style.top = `${y}px`;
+
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * 120 + 30;
+        p.style.setProperty('--dx', `${Math.cos(angle) * dist}px`);
+        p.style.setProperty('--dy', `${Math.sin(angle) * dist}px`);
+
+        document.body.appendChild(p);
+        setTimeout(() => p.remove(), 800);
+      }
+    }
+
+    function triggerScreenShake() {
+      document.body.classList.add('shake');
+      setTimeout(() => document.body.classList.remove('shake'), 400);
+    }
+
+    // --- Win / Loss Stats ---
+    function loadStats() {
+      const wins = parseInt(localStorage.getItem('uno_wins') || '0', 10);
+      const losses = parseInt(localStorage.getItem('uno_losses') || '0', 10);
+      const total = wins + losses;
+      const rate = total > 0 ? Math.round((wins / total) * 100) : 0;
+
+      document.getElementById('statWins').innerText = wins;
+      document.getElementById('statLosses').innerText = losses;
+      document.getElementById('statRate').innerText = `${rate}%`;
+    }
+
+    function recordGameResult(isWinner) {
+      if (isWinner) {
+        const wins = parseInt(localStorage.getItem('uno_wins') || '0', 10) + 1;
+        localStorage.setItem('uno_wins', wins);
+      } else {
+        const losses = parseInt(localStorage.getItem('uno_losses') || '0', 10) + 1;
+        localStorage.setItem('uno_losses', losses);
+      }
+      loadStats();
+    }
 
     function goHome() {
       window.location.hash = '';
@@ -288,6 +448,7 @@
     }
 
     function joinDirect() {
+      initAudio();
       let username = document.getElementById('username').value.trim();
       let roomCode = document.getElementById('roomCode').value.trim();
       const avatar = document.getElementById('avatarSelect').value;
@@ -314,6 +475,7 @@
     }
 
     window.addEventListener('load', () => {
+      loadStats();
       const savedName = localStorage.getItem('uno_username');
       const savedAvatar = localStorage.getItem('uno_avatar');
 
@@ -382,9 +544,31 @@
     function callUno() { socket.emit('callUno'); }
 
     socket.on('unoAcknowledged', () => {
+      playSound('uno');
       const unoBtn = document.getElementById('unoBtn');
       unoBtn.style.backgroundColor = '#27ae60';
       setTimeout(() => unoBtn.style.backgroundColor = '#e74c3c', 2000);
+    });
+
+    socket.on('unoCalledEvent', (data) => {
+      playSound('uno');
+      const box = document.getElementById('chatBox');
+      box.innerHTML += `<div>🚨 <strong>${data.sender}</strong> called UNO!</div>`;
+      box.scrollTop = box.scrollHeight;
+    });
+
+    socket.on('cardPlayedEvent', (data) => {
+      playSound('playCard');
+      if (data.isWildPlus4 || data.isHeavyStack) {
+        triggerScreenShake();
+        const pile = document.getElementById('pileArea');
+        const rect = pile.getBoundingClientRect();
+        triggerParticleExplosion(rect.left + rect.width / 2, rect.top + rect.height / 2, 30);
+      }
+    });
+
+    socket.on('cardDrawnEvent', () => {
+      playSound('drawCard');
     });
 
     function handleCardClick(cardId) {
@@ -446,6 +630,7 @@
     }
 
     socket.on('startCountdown', (sec) => {
+      playSound('tick');
       document.getElementById('countdownDisplay').innerText = `Game starting in ${sec}...`;
       document.getElementById('hostControls').classList.add('hidden');
       document.getElementById('guestWaitingMsg').classList.add('hidden');
@@ -474,6 +659,7 @@
     });
 
     socket.on('timerUpdate', (secondsLeft) => {
+      if (secondsLeft <= 5 && secondsLeft > 0) playSound('tick');
       document.getElementById('timerFill').style.width = ((secondsLeft / 30) * 100) + '%';
     });
 
@@ -566,7 +752,18 @@
     });
 
     socket.on('gameOver', (finalLeaderboard) => {
-      alert("🎉 Game Over!\n\nRankings:\n" + finalLeaderboard.map((p, i) => `${i + 1}. ${p}`).join('\n'));
+      const isWinner = finalLeaderboard.length > 0 && finalLeaderboard[0].sessionId === sessionId;
+      
+      recordGameResult(isWinner);
+
+      if (isWinner) {
+        playSound('victory');
+        triggerParticleExplosion(window.innerWidth / 2, window.innerHeight / 2, 60);
+      } else {
+        playSound('defeat');
+      }
+
+      alert("🎉 Game Over!\n\nRankings:\n" + finalLeaderboard.map((p, i) => `${i + 1}. ${p.name}`).join('\n'));
       goHome();
     });
   </script>

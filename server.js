@@ -93,7 +93,12 @@ function checkGameOverCondition(room) {
   const activePlayers = getActivePlayers(room);
   if (activePlayers.length <= 1) {
     if (room.timer) clearInterval(room.timer);
-    if (activePlayers.length === 1) room.leaderboard.push(`${activePlayers[0].avatar} ${activePlayers[0].name}`);
+    if (activePlayers.length === 1) {
+      room.leaderboard.push({
+        sessionId: activePlayers[0].sessionId,
+        name: `${activePlayers[0].avatar} ${activePlayers[0].name}`
+      });
+    }
     io.to(room.roomCode).emit('gameOver', room.leaderboard);
     return true;
   }
@@ -127,6 +132,7 @@ function advanceTurn(room, steps = 1) {
   io.to(room.roomCode).emit('gameState', {
     discardPile: room.discardPile,
     currentTurn: `${currP.avatar} ${currP.name}`,
+    currentSessionId: currP.sessionId,
     nextTurn: `${nextP.avatar} ${nextP.name}`,
     leaderboard: room.leaderboard,
     direction: room.direction,
@@ -217,6 +223,7 @@ io.on('connection', (socket) => {
       socket.emit('gameState', {
         discardPile: room.discardPile,
         currentTurn: currP ? `${currP.avatar} ${currP.name}` : '--',
+        currentSessionId: currP ? currP.sessionId : null,
         nextTurn: nextP ? `${nextP.avatar} ${nextP.name}` : '--',
         leaderboard: room.leaderboard,
         direction: room.direction,
@@ -287,7 +294,7 @@ io.on('connection', (socket) => {
     const room = rooms[socket.roomCode];
     if (!room) return;
     room.unoCalled[socket.sessionId] = true;
-    io.to(socket.roomCode).emit('chatMessage', { sender: 'System', text: `🚨 ${socket.avatar} ${socket.username} called UNO!` });
+    io.to(socket.roomCode).emit('unoCalledEvent', { sender: `${socket.avatar} ${socket.username}` });
     socket.emit('unoAcknowledged');
   });
 
@@ -324,6 +331,15 @@ io.on('connection', (socket) => {
       addCardToPile(room, c);
     });
 
+    const isWildPlus4 = playedCards.some(c => c.value === '+4');
+    const isHeavyStack = room.stackedDraw >= 4;
+
+    io.to(socket.roomCode).emit('cardPlayedEvent', {
+      isWildPlus4,
+      isHeavyStack,
+      cardCount: playedCards.length
+    });
+
     if (player.cards.length === 1) {
       if (!room.unoCalled[player.sessionId]) {
         if (room.deck.length === 0) room.deck = createDeck();
@@ -337,7 +353,7 @@ io.on('connection', (socket) => {
     const lastCard = playedCards[playedCards.length - 1];
     if (player.cards.length === 0) {
       player.finished = true;
-      room.leaderboard.push(`${player.avatar} ${player.name}`);
+      room.leaderboard.push({ sessionId: player.sessionId, name: `${player.avatar} ${player.name}` });
     }
 
     if (checkGameOverCondition(room)) return;
@@ -371,6 +387,7 @@ io.on('connection', (socket) => {
 
     if (player.cards.length > 1) room.unoCalled[player.sessionId] = false;
 
+    io.to(socket.roomCode).emit('cardDrawnEvent', { drawCount });
     socket.emit('yourHand', player.cards);
     advanceTurn(room, 1);
   });
