@@ -1040,15 +1040,14 @@
       const handDiv = document.getElementById('hand');
       const total = cards.length;
 
-      // Scale overlap more aggressively as the hand grows, so a big hand
-      // compresses instead of just spilling further off-screen.
-      const overlapMargin = total > 5 ? Math.max(-62, -15 - (total * 2.4)) : -28;
-      const maxRotate = Math.min(20, total * 1.8);
+      // Keep a readable sliver of each card visible — don't over-compress.
+      // Large hands are meant to overflow and scroll, not shrink to nothing.
+      const overlapMargin = total > 5 ? Math.max(-42, -15 - (total * 1.3)) : -28;
+      const maxRotate = Math.min(20, total * 1.4);
 
-      // Past a point, also shrink the cards themselves so more stay
-      // comfortably visible before relying purely on overlap/scroll.
-      if (total > 12) {
-        handDiv.style.setProperty('--card-w', `clamp(46px, ${Math.max(7, 13 - (total - 12) * 0.35)}vw, 90px)`);
+      // Only shrink card width for genuinely huge hands, and keep a sane floor.
+      if (total > 18) {
+        handDiv.style.setProperty('--card-w', `clamp(54px, ${Math.max(8, 13 - (total - 18) * 0.4)}vw, 90px)`);
       } else {
         handDiv.style.removeProperty('--card-w');
       }
