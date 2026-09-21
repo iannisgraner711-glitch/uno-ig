@@ -713,9 +713,6 @@ io.on('connection', (socket) => {
               if (getActivePlayers(room).length <= 1) {
                 checkGameOverCondition(room);
               } else if (room.players[room.currentTurnIndex].sessionId === player.sessionId) {
-                // steps must be >=1 here — advanceTurn(room, 0) never moves
-                // currentTurnIndex off the now-finished player, which is
-                // what caused the game to freeze on disconnect.
                 advanceTurn(room, 1);
               }
             }
