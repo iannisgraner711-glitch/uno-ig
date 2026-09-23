@@ -136,10 +136,6 @@
       border: 3.5px solid #ffd700 !important;
       box-shadow: 0 0 12px rgba(255, 215, 0, 0.8), inset 0 0 8px rgba(255, 215, 0, 0.5);
       animation: rarePulse 2s infinite alternate;
-      /* Rare custom cards get recolored on play (so the next player has a
-         real color to match), which was wiping their special Wild rainbow
-         look. Force it back, same trick Mythic already uses. */
-      background: conic-gradient(from 45deg, #e74c3c, #2980b9, #27ae60, #f1c40f, #e74c3c) !important;
     }
     @keyframes rarePulse {
       0% { box-shadow: 0 0 8px rgba(255, 215, 0, 0.6); }
