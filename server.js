@@ -505,7 +505,9 @@ io.on('connection', (socket) => {
       if (player.sessionId !== socket.sessionId || player.finished) return;
       if (!cardIds || cardIds.length === 0) return;
 
-      const playedCards = player.cards.filter(card => cardIds.includes(card.id));
+      const playedCards = cardIds
+        .map(id => player.cards.find(card => card.id === id))
+        .filter(Boolean);
       if (playedCards.length !== cardIds.length) return;
 
       const targetValue = playedCards[0].value;
@@ -519,8 +521,10 @@ io.on('connection', (socket) => {
         console.log(`[RESET DEBUG] Players before reset:`, room.players.map(p => ({ name: p.name, sessionId: p.sessionId, cards: p.cards.length, finished: p.finished })));
       }
 
-      // Domain Expansion color enforcement check
-      if (room.domainColor && firstCard.color !== 'Wild' && firstCard.color !== room.domainColor) {
+      // Domain Expansion color enforcement check (checks all played cards,
+      // same reasoning as the isMatch fix below)
+      if (room.domainColor && !playedCards.some(c => c.color === 'Wild' || c.color === room.domainColor)) {
+        console.log(`[STACK REJECT] ${player.name} tried [${playedCards.map(c => c.color + ' ' + c.value).join(', ')}] but Domain requires ${room.domainColor}`);
         return socket.emit('chatMessage', { sender: 'System', text: `🌀 Domain Active! You must play ${room.domainColor}!` });
       }
 
@@ -537,10 +541,20 @@ io.on('connection', (socket) => {
         return advanceTurn(room, 1);
       }
 
-      if (room.stackedDraw > 0 && !['+2', '+4', '+25'].includes(firstCard.value)) return;
+      if (room.stackedDraw > 0 && !['+2', '+4', '+25', '+67'].includes(firstCard.value)) {
+        console.log(`[STACK REJECT] ${player.name} tried [${playedCards.map(c => c.color + ' ' + c.value).join(', ')}] but must respond to a +${room.stackedDraw} stack with a draw card.`);
+        return;
+      }
 
-      const isMatch = firstCard.color === 'Wild' || firstCard.color === top.color || firstCard.value === top.value;
-      if (!isMatch && !room.domainColor) return;
+      // Was: only checked playedCards[0] against the pile, so a legal stack
+      // (e.g. Red 3 + Blue 3 + Yellow 3 on a Red 5 top) could be silently
+      // rejected if the matching card wasn't first. Now checks whether ANY
+      // played card legally matches the pile.
+      const isMatch = playedCards.some(c => c.color === 'Wild' || c.color === top.color || c.value === top.value);
+      if (!isMatch && !room.domainColor) {
+        console.log(`[STACK REJECT] ${player.name} tried [${playedCards.map(c => c.color + ' ' + c.value).join(', ')}] on top of [${top.color} ${top.value}] - no card in the stack matched.`);
+        return;
+      }
 
       cardIds.forEach(id => {
         const idx = player.cards.findIndex(c => c.id === id);
@@ -553,7 +567,7 @@ io.on('connection', (socket) => {
         addCardToPile(room, c);
       });
 
-      const isWildPlus = ['+4', '+25'].includes(firstCard.value);
+      const isWildPlus = ['+4', '+25', '+67'].includes(firstCard.value);
       const isHeavyStack = room.stackedDraw >= 4;
 
       io.to(socket.roomCode).emit('cardPlayedEvent', {
@@ -566,6 +580,9 @@ io.on('connection', (socket) => {
       if (firstCard.value === '+25') {
         room.stackedDraw += 25 * playedCards.length;
         io.to(socket.roomCode).emit('chatMessage', { sender: '💣 NUKE', text: `BOOM! $+25$ Nuke played! Stack total: $+${room.stackedDraw}$` });
+      } else if (firstCard.value === '+67') {
+        room.stackedDraw += 67 * playedCards.length;
+        io.to(socket.roomCode).emit('chatMessage', { sender: '🎉 PARTY BOMB', text: `LEGENDARY! ${player.avatar} ${player.name} unleashed the $+67$ Party Bomb! Stack total: $+${room.stackedDraw}$` });
       } else if (firstCard.value === 'Reset') {
         io.to(socket.roomCode).emit('chatMessage', { sender: '👑 GOLDEN RESET', text: 'All hands discarded and reshuffled! Everyone draws 7 fresh cards!' });
         room.players.forEach(p => {
@@ -693,7 +710,31 @@ io.on('connection', (socket) => {
   });
 
   socket.on('sendEmoji', (emoji) => {
-    if (socket.roomCode) io.to(socket.roomCode).emit('displayEmoji', { sender: `${socket.avatar} ${socket.username}`, emoji });
+    if (!socket.roomCode) return;
+    io.to(socket.roomCode).emit('displayEmoji', { sender: `${socket.avatar} ${socket.username}`, emoji });
+
+    // Secret unlock: spam the "67" button 67 times in a live game to earn
+    // a +67 Party Bomb card (Mythic styling, same family as the +25 Nuke).
+    if (emoji === '67') {
+      const room = rooms[socket.roomCode];
+      if (!room || !room.gameStarted) return;
+
+      const player = room.players.find(p => p.sessionId === socket.sessionId);
+      if (!player || player.finished) return;
+
+      player.sixtySevenCount = (player.sixtySevenCount || 0) + 1;
+
+      if (player.sixtySevenCount >= 67) {
+        player.sixtySevenCount = 0;
+        const card = { color: 'Wild', value: '+67', rarity: 'mythic', id: Math.random().toString(36).substr(2, 9) };
+        player.cards.push(card);
+        io.to(player.socketId).emit('yourHand', player.cards);
+        io.to(socket.roomCode).emit('chatMessage', {
+          sender: '🎉 LEGENDARY UNLOCK',
+          text: `${player.avatar} ${player.name} pressed 67 sixty-seven times and summoned the +67 Party Bomb!`
+        });
+      }
+    }
   });
 
   socket.on('disconnect', () => {
@@ -713,6 +754,9 @@ io.on('connection', (socket) => {
               if (getActivePlayers(room).length <= 1) {
                 checkGameOverCondition(room);
               } else if (room.players[room.currentTurnIndex].sessionId === player.sessionId) {
+                // steps must be >=1 here — advanceTurn(room, 0) never moves
+                // currentTurnIndex off the now-finished player, which is
+                // what caused the game to freeze on disconnect.
                 advanceTurn(room, 1);
               }
             }

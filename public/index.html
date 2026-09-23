@@ -136,6 +136,10 @@
       border: 3.5px solid #ffd700 !important;
       box-shadow: 0 0 12px rgba(255, 215, 0, 0.8), inset 0 0 8px rgba(255, 215, 0, 0.5);
       animation: rarePulse 2s infinite alternate;
+      /* Rare custom cards get recolored on play (so the next player has a
+         real color to match), which was wiping their special Wild rainbow
+         look. Force it back, same trick Mythic already uses. */
+      background: conic-gradient(from 45deg, #e74c3c, #2980b9, #27ae60, #f1c40f, #e74c3c) !important;
     }
     @keyframes rarePulse {
       0% { box-shadow: 0 0 8px rgba(255, 215, 0, 0.6); }
@@ -461,7 +465,7 @@
       <button onclick="sendEmoji('🤬')">🤬</button>
       <button onclick="sendEmoji('💩')">💩</button>
       <button onclick="sendEmoji('⏱️')">⏱️</button>
-      <button onclick="sendEmoji('67')">67</button>
+      <button onclick="sendEmoji('67')" style="background-color:#ff5e00;">67</button>
     </div>
 
     <div id="hand" class="hand-container"></div>
@@ -513,6 +517,7 @@
         <button class="debug-btn" style="background:#7f00ff;" onclick="spawnDebugCard('Wild', 'Reset', 'mythic')">👑 Golden Reset</button>
         <button class="debug-btn" style="background:#00f0ff;" onclick="spawnDebugCard('Wild', 'Domain', 'mythic')">🌀 Domain Lock</button>
         <button class="debug-btn" style="background:#f1c40f;" onclick="spawnDebugCard('Wild', 'Reflect', 'mythic')">🪞 Reflect</button>
+        <button class="debug-btn" style="background:#ff5e00;" onclick="spawnDebugCard('Wild', '+67', 'mythic')">🎉 +67 Party Bomb</button>
       </div>
 
       <button onclick="closeDebugMenu()" style="background-color: #6c757d; width: 100%; margin-top: 15px;">Close Debug</button>
@@ -969,6 +974,7 @@
       if (val === 'Reverse') return '⇄';
       if (val === 'Skip') return '⊘';
       if (val === '+25') return '💣+25';
+      if (val === '+67') return '🎉+67';
       if (val === 'Reset') return '👑';
       if (val === 'Domain') return '🌀';
       if (val === 'Reflect') return '🪞';
